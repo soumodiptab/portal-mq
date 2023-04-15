@@ -64,12 +64,12 @@ class PortalClient:
                 response = requests.post(f"http://{self.leader['host']}:{self.leader['port']}{path}",json=data,timeout=TIMEOUT_REQUEST)
                 return response.json()
             except Exception:
-                return self.request(self,method,path,data,recur+1)
+                return self.request(method,path,data,recur+1)
         elif method == 'GET':
             try :
                 response = requests.get(f"http://{self.leader['host']}:{self.leader['port']}{path}",timeout=TIMEOUT_REQUEST)
                 return response.json()
             except Exception:
-                return self.request(self,method,path,data,recur+1)
+                return self.request(method,path,data,recur+1)
         else:
             raise Exception("Invalid method")

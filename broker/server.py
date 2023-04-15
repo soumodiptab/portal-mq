@@ -34,7 +34,6 @@ def close_db_connection(conn):
     conn.close()
 
 
-
 def db_init():
     con = get_db_connection()
     cur = con.cursor()
@@ -141,7 +140,7 @@ def create_consumer():
     # Get the message from the request body
     id = request.json.get('id')
 
-    command = "INSERT INTO consumer VALUES(" + str(id) + ");"
+    command = "INSERT INTO consumer VALUES('" + str(id) + "');"
 
     con = get_db_connection()
     cur = con.cursor()
@@ -157,8 +156,8 @@ def delete_consumer():
     id = request.json.get('id')
 
     # DELETE FROM artists_backup WHERE artistid = 1;
-    
-    command = "DELETE FROM consumer WHERE id = " + str(id) + ";"
+
+    command = "DELETE FROM consumer WHERE id = '" + str(id) + "';"
 
     con = get_db_connection()
     cur = con.cursor()
@@ -172,8 +171,8 @@ def delete_consumer():
 def create_producer():
     # Get the message from the request body
     id = request.json.get('id')
-    
-    command = "INSERT INTO producer VALUES(" + str(id) + ");"
+
+    command = "INSERT INTO producer VALUES('" + str(id) + "');"
 
     con = get_db_connection()
     cur = con.cursor()
@@ -189,8 +188,8 @@ def delete_producer():
     id = request.json.get('id')
 
     # DELETE FROM artists_backup WHERE artistid = 1;
-    
-    command = "DELETE FROM producer WHERE id = " + str(id) + ";"
+
+    command = "DELETE FROM producer WHERE id = '" + str(id) + "';"
 
     con = get_db_connection()
     cur = con.cursor()
@@ -198,7 +197,6 @@ def delete_producer():
     con.commit()
     close_db_connection(con)
     return jsonify({'message': 'producer deleted successfully'})
-
 
 
 @app.route("/topic/exists", methods=['POST'])
@@ -232,7 +230,8 @@ def create_topic():
     name = request.json.get('name')
     # offset = request.json.get('offset')
 
-    command = "INSERT INTO topic (name, offset) VALUES('" + str(name) + "', 0)" + ";"
+    command = "INSERT INTO topic (name, offset) VALUES('" + \
+        str(name) + "', 0)" + ";"
 
     print(command)
 
@@ -250,7 +249,7 @@ def delete_topic():
     name = request.json.get('name')
 
     # DELETE FROM artists_backup WHERE artistid = 1;
-    
+
     command = "DELETE FROM topic WHERE name = '" + str(name) + "';"
 
     con = get_db_connection()
