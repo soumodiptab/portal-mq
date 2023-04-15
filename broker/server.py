@@ -1,12 +1,12 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from kazoo.client import KazooClient
 from kazoo.exceptions import NoNodeError
 from kazoo.recipe import election
 import uuid
-import json
 import sys
 import uuid
 import sqlite3
+import json
 
 app = Flask(__name__)
 id = str(uuid.uuid4())
@@ -21,10 +21,23 @@ zk.ensure_path('/leader')
 zk.ensure_path('/message_queue');
 election_node = zk.create('/election/node-'+id, ephemeral=True)
 
-con = sqlite3.connect(str(PORT) + ".sqlite")
-cur = con.cursor()
+# con = sqlite3.connect(str(PORT) + ".sqlite")
+
+# Define a function to connect to the database
+def get_db_connection():
+    conn = sqlite3.connect(str(PORT) + ".sqlite")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# Define a function to close the database connection
+def close_db_connection(conn):
+    conn.close()
+
 
 def db_init():
+    con = get_db_connection()
+    cur = con.cursor()
+
     drop_consumer_table = "DROP TABLE IF EXISTS consumer;"
     drop_producer_table = "DROP TABLE IF EXISTS producer;"
     drop_topic_table = "DROP TABLE IF EXISTS topic;"
@@ -34,11 +47,15 @@ def db_init():
     cur.execute(drop_topic_table)
 
     create_consumer_table = "CREATE TABLE consumer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
-    cur.execute(create_consumer_table)
     create_producer_table = "CREATE TABLE producer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
+    create_topic_table = "CREATE TABLE topic (id INTEGER PRIMARY KEY AUTOINCREMENT, name varchar(100) NOT NULL UNIQUE, offset INTEGER NOT NULL);"
+
+    cur.execute(create_consumer_table)
     cur.execute(create_producer_table)
-    create_topic_table = "CREATE TABLE topic (id INTEGER PRIMARY KEY AUTOINCREMENT, name varchar(100) NOT NULL, offset INTEGER NOT NULL);"
     cur.execute(create_topic_table)
+
+    con.commit()
+    close_db_connection(con)
 
 
 def become_leader():
@@ -120,8 +137,122 @@ def create_consumer():
     
     command = "INSERT INTO consumer VALUES(" + str(id) + ");"
 
+    con = get_db_connection()
+    cur = con.cursor()
     cur.execute(command)
-    return 'consumer created successfully.'
+    con.commit()
+    close_db_connection(con)
+    return jsonify({'message': 'consumer created successfully'})
+
+
+@app.route("/consumer/delete", methods=['POST'])
+def delete_consumer():
+    # Get the message from the request body
+    id = request.json.get('id')
+
+    # DELETE FROM artists_backup WHERE artistid = 1;
+    
+    command = "DELETE FROM consumer WHERE id = " + str(id) + ";"
+
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(command)
+    con.commit()
+    close_db_connection(con)
+    return jsonify({'message': 'consumer deleted successfully'})
+
+
+@app.route("/producer/create", methods=['POST'])
+def create_producer():
+    # Get the message from the request body
+    id = request.json.get('id')
+    
+    command = "INSERT INTO producer VALUES(" + str(id) + ");"
+
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(command)
+    con.commit()
+    close_db_connection(con)
+    return jsonify({'message': 'producer created successfully'})
+
+
+@app.route("/producer/delete", methods=['POST'])
+def delete_producer():
+    # Get the message from the request body
+    id = request.json.get('id')
+
+    # DELETE FROM artists_backup WHERE artistid = 1;
+    
+    command = "DELETE FROM producer WHERE id = " + str(id) + ";"
+
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(command)
+    con.commit()
+    close_db_connection(con)
+    return jsonify({'message': 'producer deleted successfully'})
+
+
+
+@app.route("/topic/exists", methods=['POST'])
+def exists_topic():
+    # Get the message from the request body
+    name = request.json.get('name')
+
+    command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
+
+    print(command)
+
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(command)
+    rows = cur.fetchall()
+
+    print("len: " + str(len(rows)))
+
+    con.commit()
+    close_db_connection(con)
+
+    if(len(rows) > 0):
+        return jsonify({'message': True})
+    else:
+        return jsonify({'message': False})
+
+
+@app.route("/topic/create", methods=['POST'])
+def create_topic():
+    # Get the message from the request body
+    name = request.json.get('name')
+    # offset = request.json.get('offset')
+
+    command = "INSERT INTO topic (name, offset) VALUES('" + str(name) + "', 0)" + ";"
+
+    print(command)
+
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(command)
+    con.commit()
+    close_db_connection(con)
+    return jsonify({'message': 'topic created successfully'})
+
+
+@app.route("/topic/delete", methods=['POST'])
+def delete_topic():
+    # Get the message from the request body
+    name = request.json.get('name')
+
+    # DELETE FROM artists_backup WHERE artistid = 1;
+    
+    command = "DELETE FROM topic WHERE name = '" + str(name) + "';"
+
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(command)
+    con.commit()
+    close_db_connection(con)
+    return jsonify({'message': 'topic deleted successfully'})
 
 
 if __name__ == '__main__':
