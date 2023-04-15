@@ -1,3 +1,4 @@
+import uuid
 class PortalClient:
     def __init__(self,portal_connection):
         """_summary_
@@ -13,3 +14,8 @@ class PortalClient:
                 "port": 5001
             }]
         """
+        self.portal_connection = portal_connection
+        self.id = uuid.uuid4()
+        self.name = "PortalClient"
+
+    def start
