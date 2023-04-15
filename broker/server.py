@@ -6,6 +6,8 @@ import uuid
 import json
 import sys
 import uuid
+import sqlite3
+
 app = Flask(__name__)
 id = str(uuid.uuid4())
 HOST = '0.0.0.0'
@@ -18,6 +20,26 @@ zk.ensure_path('/election');
 zk.ensure_path('/leader')
 zk.ensure_path('/message_queue');
 election_node = zk.create('/election/node-'+id, ephemeral=True)
+
+con = sqlite3.connect(str(PORT) + ".sqlite")
+cur = con.cursor()
+
+def db_init():
+    drop_consumer_table = "DROP TABLE IF EXISTS consumer;"
+    drop_producer_table = "DROP TABLE IF EXISTS producer;"
+    drop_topic_table = "DROP TABLE IF EXISTS topic;"
+
+    cur.execute(drop_consumer_table)
+    cur.execute(drop_producer_table)
+    cur.execute(drop_topic_table)
+
+    create_consumer_table = "CREATE TABLE consumer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
+    cur.execute(create_consumer_table)
+    create_producer_table = "CREATE TABLE producer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
+    cur.execute(create_producer_table)
+    create_topic_table = "CREATE TABLE topic (id INTEGER PRIMARY KEY AUTOINCREMENT, name varchar(100) NOT NULL, offset INTEGER NOT NULL);"
+    cur.execute(create_topic_table)
+
 
 def become_leader():
     leader_loc = {'host': HOST, 'port': PORT}
@@ -91,8 +113,19 @@ def watch_children(children):
 # def watch_node(data, stat):
 #     print("Version: %s, data: %s" % (stat.version, data.decode("utf-8")))
 
+@app.route("/consumer/create", methods=['POST'])
+def create_consumer():
+    # Get the message from the request body
+    id = request.json.get('id')
+    
+    command = "INSERT INTO consumer VALUES(" + str(id) + ");"
+
+    cur.execute(command)
+    return 'consumer created successfully.'
+
 
 if __name__ == '__main__':
     start_election()
+    db_init()
     app.run(host="0.0.0.0", port=PORT, debug=True, use_debugger=False,
             use_reloader=False, passthrough_errors=True)
