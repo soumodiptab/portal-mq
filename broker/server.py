@@ -10,19 +10,20 @@ import sqlite3
 
 app = Flask(__name__)
 id = str(uuid.uuid4())
-HOST = '0.0.0.0'
-PORT = sys.argv[1]
+HOST = '127.0.0.1'
 #PORT = 5000
+PORT = sys.argv[1]
 zk = KazooClient(hosts='localhost:2181')
 zk.start()
 
-zk.ensure_path('/election');
+zk.ensure_path('/election')
 zk.ensure_path('/leader')
-zk.ensure_path('/message_queue');
+zk.ensure_path('/message_queue')
 election_node = zk.create('/election/node-'+id, ephemeral=True)
 
 con = sqlite3.connect(str(PORT) + ".sqlite")
 cur = con.cursor()
+
 
 def db_init():
     drop_consumer_table = "DROP TABLE IF EXISTS consumer;"
@@ -65,11 +66,15 @@ def election_watcher(event):
     start_election()
 
 
+@app.route('/')
+def health():
+    return 'Healthy'
+
+
 @app.route('/publish', methods=['POST'])
 def publish_message():
     # Get the message from the request body
     message = request.json.get('message')
-
     # Create a new znode with the message as the data
     zk.create('/message_queue/message_',
               value=message.encode(), sequence=True)
@@ -113,11 +118,12 @@ def watch_children(children):
 # def watch_node(data, stat):
 #     print("Version: %s, data: %s" % (stat.version, data.decode("utf-8")))
 
+
 @app.route("/consumer/create", methods=['POST'])
 def create_consumer():
     # Get the message from the request body
     id = request.json.get('id')
-    
+
     command = "INSERT INTO consumer VALUES(" + str(id) + ");"
 
     cur.execute(command)

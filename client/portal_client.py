@@ -40,19 +40,20 @@ class PortalClient:
             self.leader = json.loads(data.decode())
             print(f"New leader: {self.leader}")
 
-    def connect(self,host,port):
+    def connect(self):
         try:
-            response = requests.get(f"http://{host}:{port}/",timeout=TIMEOUT_CONNECT)
+            response = self.request('GET',"/",{})
             if response.status_code == 200:
                 return True
             return False
-        except requests.exceptions.Timeout:
+        except Exception:
             return False
         
-    def test(self):
-        for portal in self.portal_connection:
-            if not self.connect(portal['host'],portal['port']):
-                raise Exception(f"Unable to connect to broker {portal['host']}:{portal['port']}")
+    # def test(self):
+    #     for portal in self.portal_connection:
+    #         if not self.connect(portal['host'],portal['port']):
+    #             raise Exception(f"Unable to connect to broker {portal['host']}:{portal['port']}")
+    #     print("All brokers are up")
         
     def request(self,method,path,data,recur=0):
         if recur >= MAX_RETRY:
@@ -62,13 +63,13 @@ class PortalClient:
                 data["id"]=str(self.id)
                 response = requests.post(f"http://{self.leader['host']}:{self.leader['port']}{path}",json=data,timeout=TIMEOUT_REQUEST)
                 return response.json()
-            except requests.exceptions.Timeout:
+            except Exception:
                 return self.request(self,method,path,data,recur+1)
         elif method == 'GET':
             try :
                 response = requests.get(f"http://{self.leader['host']}:{self.leader['port']}{path}",timeout=TIMEOUT_REQUEST)
                 return response.json()
-            except requests.exceptions.Timeout:
+            except Exception:
                 return self.request(self,method,path,data,recur+1)
         else:
             raise Exception("Invalid method")

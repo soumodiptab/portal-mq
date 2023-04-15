@@ -1,5 +1,5 @@
 from portal_client import PortalClient
-config=[
+config = [
     {
         "host": "localhost",
         "port": 5000
@@ -14,4 +14,4 @@ config=[
     }
 ]
 client = PortalClient(config)
-client.test()
+client.connect()

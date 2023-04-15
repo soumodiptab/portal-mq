@@ -1,20 +1,26 @@
 from portal_client import PortalClient
 class PortalConsumer:
     def __init__(self,client : PortalClient):
+        
         self.client = client
-        self.register()
+        self.__register()
 
-    def register(self):
+    def __register(self):
         resp=self.client.request('POST','/consumer/create',data={})
         print(resp)
 
-    def unregister(self):
+    def __unregister(self):
         resp=self.client.request('POST','/consumer/delete',data={})
         print(resp)
     
     def __del__(self):
-        self.unregister()
+        self.__unregister()
 
     def consume_message(self,topic):
-        resp=self.client.request('POST','/consume')
-        print(resp)
+        resp=self.client.request('POST','/consume',data={"topic":topic})
+        return resp.message
+    
+    def get_topics(self):
+        resp=self.client.request('GET','/topics')
+        return resp.topics
+    
