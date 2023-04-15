@@ -42,8 +42,8 @@ class PortalClient:
 
     def connect(self):
         try:
-            response = self.request('GET',"/",{})
-            if response.status_code == 200:
+            response,status = self.request('GET',"/",{})
+            if status == 200:
                 return True
             return False
         except Exception:
@@ -62,13 +62,17 @@ class PortalClient:
             try :
                 data["id"]=str(self.id)
                 response = requests.post(f"http://{self.leader['host']}:{self.leader['port']}{path}",json=data,timeout=TIMEOUT_REQUEST)
-                return response.json()
+                if not response.status_code == 200:
+                    return None,response.status_code
+                return response.json(),response.status_code
             except Exception:
                 return self.request(method,path,data,recur+1)
         elif method == 'GET':
             try :
                 response = requests.get(f"http://{self.leader['host']}:{self.leader['port']}{path}",timeout=TIMEOUT_REQUEST)
-                return response.json()
+                if not response.status_code == 200:
+                    return None,response.status_code
+                return response.json(),response.status_code
             except Exception:
                 return self.request(method,path,data,recur+1)
         else:

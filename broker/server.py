@@ -26,7 +26,7 @@ election_node = zk.create('/election/node-'+id, ephemeral=True)
 
 # Define a function to connect to the database
 def get_db_connection():
-    conn = sqlite3.connect(str(PORT) + ".sqlite")
+    conn = sqlite3.connect("./db/"+str(PORT) + ".sqlite")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -135,7 +135,6 @@ def publish_message():
     records = cur.fetchall()
     con.commit()
     close_db_connection(con)
-
     return jsonify({'message': 'published in topic successfully'})
 
 
@@ -191,7 +190,6 @@ def consume_message():
         records = cur.fetchall()
         con.commit()
         close_db_connection(con)
-
         return jsonify({'message' : message})
 
     else:
@@ -208,9 +206,9 @@ def consume_message():
 #         election_obj = election.Election(zk, '/election')
 
 
-@zk.ChildrenWatch("/message_queue")
-def watch_children(children):
-    print("Children are now: %s" % children)
+# @zk.ChildrenWatch("/message_queue")
+# def watch_children(children):
+#     print("Children are now: %s" % children)
 
 # @zk.DataWatch("/my/favorite")
 # def watch_node(data, stat):

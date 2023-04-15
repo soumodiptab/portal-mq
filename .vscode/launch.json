@@ -12,7 +12,6 @@
             "console": "integratedTerminal",
             "cwd": "${fileDirname}",
             "args": [
-               "train","cbow_neg"
             ],
             "justMyCode": true
         }
