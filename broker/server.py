@@ -23,16 +23,17 @@ election_node = zk.create('/election/node-'+id, ephemeral=True)
 
 # con = sqlite3.connect(str(PORT) + ".sqlite")
 
+
 # Define a function to connect to the database
 def get_db_connection():
     conn = sqlite3.connect(str(PORT) + ".sqlite")
     conn.row_factory = sqlite3.Row
     return conn
 
+
 # Define a function to close the database connection
 def close_db_connection(conn):
     conn.close()
-
 
 
 def db_init():
@@ -42,18 +43,22 @@ def db_init():
     drop_consumer_table = "DROP TABLE IF EXISTS consumer;"
     drop_producer_table = "DROP TABLE IF EXISTS producer;"
     drop_topic_table = "DROP TABLE IF EXISTS topic;"
+    drop_message_queue_table = "DROP TABLE IF EXISTS message_queue;"
 
     cur.execute(drop_consumer_table)
     cur.execute(drop_producer_table)
     cur.execute(drop_topic_table)
+    cur.execute(drop_message_queue_table)
 
     create_consumer_table = "CREATE TABLE consumer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
     create_producer_table = "CREATE TABLE producer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
-    create_topic_table = "CREATE TABLE topic (id INTEGER PRIMARY KEY AUTOINCREMENT, name varchar(100) NOT NULL UNIQUE, offset INTEGER NOT NULL);"
+    create_topic_table = "CREATE TABLE topic (id INTEGER PRIMARY KEY AUTOINCREMENT, name varchar(100) NOT NULL UNIQUE, offset INTEGER NOT NULL, size INTEGER NOT NULL);"
+    create_message_queue_table = "CREATE TABLE message_queue (id INTEGER NOT NULL, seq_no INTEGER NOT NULL, message varchar(500), PRIMARY KEY (id, seq_no), FOREIGN KEY(id) REFERENCES topic(id));"
 
     cur.execute(create_consumer_table)
     cur.execute(create_producer_table)
     cur.execute(create_topic_table)
+    cur.execute(create_message_queue_table)
 
     con.commit()
     close_db_connection(con)
@@ -90,32 +95,108 @@ def health():
 
 @app.route('/publish', methods=['POST'])
 def publish_message():
-    # Get the message from the request body
+    # # Get the message from the request body
+    # message = request.json.get('message')
+    # # Create a new znode with the message as the data
+    # zk.create('/message_queue/message_', value=message.encode(), sequence=True)
+    # return 'Message published successfully.'
+
+    name = request.json.get('name')
     message = request.json.get('message')
-    # Create a new znode with the message as the data
-    zk.create('/message_queue/message_',
-              value=message.encode(), sequence=True)
-    return 'Message published successfully.'
+
+    command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
+
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(command)
+    records = cur.fetchall()
+    con.commit()
+    close_db_connection(con)
+
+    id = records[0][0]
+    size = records[0][3]
+    new_size = size+1
+    seq_no = size+1
+
+    # Update the size of the existing queue in topic table
+    update_command = "UPDATE topic SET size = " + str(new_size) + " WHERE name = '" + str(name) + "';"
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(update_command)
+    records = cur.fetchall()
+    con.commit()
+    close_db_connection(con)
+
+    # Write in the message_queue table
+    write_command = "INSERT INTO message_queue VALUES(" + str(id) + ", " + str(seq_no) + ", '" + str(message) + "');"
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(write_command)
+    records = cur.fetchall()
+    con.commit()
+    close_db_connection(con)
+
+    return jsonify({'message': 'published in topic successfully'})
 
 
-@app.route('/consume')
+@app.route('/consume', methods=['POST'])
 def consume_message():
-    # Get the current leader of the election
-    # Get a list of all messages in the queue
-    messages = zk.get_children('/message_queue')
-    sorted_messages = sorted(messages)
-    # Get the first message in the queue
-    if len(sorted_messages) > 0:
-        message_path = '/message_queue/' + sorted_messages[0]
-        message, _ = zk.get(message_path)
-        message = message.decode()
+    # # Get the current leader of the election
+    # # Get a list of all messages in the queue
+    # messages = zk.get_children('/message_queue')
+    # sorted_messages = sorted(messages)
+    # # Get the first message in the queue
+    # if len(sorted_messages) > 0:
+    #     message_path = '/message_queue/' + sorted_messages[0]
+    #     message, _ = zk.get(message_path)
+    #     message = message.decode()
 
-        # Delete the message from the queue
-        zk.delete(message_path)
+    #     # Delete the message from the queue
+    #     zk.delete(message_path)
 
-        return message
+    #     return message
+    # else:
+    #     return 'No messages in the queue.'
+
+    name = request.json.get('name')
+    command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
+
+    con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(command)
+    records = cur.fetchall()
+    con.commit()
+    close_db_connection(con)
+
+    id = records[0][0]
+    offset = records[0][2]
+    size = records[0][3]
+
+    if(offset < size):
+        # Fetch from message_queue table
+        fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
+        con = get_db_connection()
+        cur = con.cursor()
+        cur.execute(fetch_command)
+        records = cur.fetchall()
+        con.commit()
+        close_db_connection(con)
+        message = records[0][2]
+
+        # Update topic table, increase offset
+        update_command = "UPDATE topic SET offset = " + str(offset+1) + " WHERE name = '" + str(name) + "';"
+        con = get_db_connection()
+        cur = con.cursor()
+        cur.execute(update_command)
+        records = cur.fetchall()
+        con.commit()
+        close_db_connection(con)
+
+        return jsonify({'message' : message})
+
     else:
-        return 'No messages in the queue.'
+        return jsonify({'message': ''}), 204
+
 
 # Watch for changes in the leadership
 # @zk.DataWatch('/election')
@@ -200,7 +281,6 @@ def delete_producer():
     return jsonify({'message': 'producer deleted successfully'})
 
 
-
 @app.route("/topic/exists", methods=['POST'])
 def exists_topic():
     # Get the message from the request body
@@ -232,7 +312,7 @@ def create_topic():
     name = request.json.get('name')
     # offset = request.json.get('offset')
 
-    command = "INSERT INTO topic (name, offset) VALUES('" + str(name) + "', 0)" + ";"
+    command = "INSERT INTO topic (name, offset, size) VALUES('" + str(name) + "', 0, 0)" + ";"
 
     print(command)
 
