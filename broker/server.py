@@ -8,18 +8,22 @@ import sys
 import uuid
 app = Flask(__name__)
 id = str(uuid.uuid4())
+HOST = '0.0.0.0'
 PORT = sys.argv[1]
 #PORT = 5000
 zk = KazooClient(hosts='localhost:2181')
 zk.start()
 
 zk.ensure_path('/election');
+zk.ensure_path('/leader')
 zk.ensure_path('/message_queue');
 election_node = zk.create('/election/node-'+id, ephemeral=True)
 
 def become_leader():
-    # Do something as the leader
-    print('I am the leader!')
+    leader_loc = {'host': HOST, 'port': PORT}
+    leader_loc_str = json.dumps(leader_loc)
+    zk.set('/leader', leader_loc_str.encode())
+    print("<Leader>")
 
 
 def start_election():
