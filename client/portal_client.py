@@ -18,4 +18,9 @@ class PortalClient:
         self.id = uuid.uuid4()
         self.name = "PortalClient"
 
-    def start
+    def connect(self):
+        pass
+    
+    def get_leader(self):
+
+    def request(path,method):

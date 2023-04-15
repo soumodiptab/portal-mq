@@ -12,8 +12,10 @@ PORT = sys.argv[1]
 #PORT = 5000
 zk = KazooClient(hosts='localhost:2181')
 zk.start()
-election_node = zk.create('/election/node-'+id, ephemeral=True)
 
+zk.ensure_path('/election');
+zk.ensure_path('/message_queue');
+election_node = zk.create('/election/node-'+id, ephemeral=True)
 
 def become_leader():
     # Do something as the leader
