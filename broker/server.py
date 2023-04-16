@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 from kazoo.client import KazooClient
 from kazoo.exceptions import NoNodeError
 from kazoo.recipe import election
+from kazoo.recipe.watchers import ChildrenWatch
+import threading
 import uuid
 import sys
 import uuid
@@ -13,12 +15,15 @@ id = str(uuid.uuid4())
 HOST = '127.0.0.1'
 #PORT = 5000
 PORT = sys.argv[1]
-zk = KazooClient(hosts='localhost:2181')
+zkhost='localhost:2181'
+zk = KazooClient(hosts=zkhost)
 zk.start()
-
+delimiter =','
+last_log_index = 0
 zk.ensure_path('/election')
 zk.ensure_path('/leader')
 zk.ensure_path('/message_queue')
+zk.ensure_path('/logs')
 election_node = zk.create('/election/node-'+id, ephemeral=True)
 
 # con = sqlite3.connect(str(PORT) + ".sqlite")
@@ -44,22 +49,27 @@ def db_init():
     drop_producer_table = "DROP TABLE IF EXISTS producer;"
     drop_topic_table = "DROP TABLE IF EXISTS topic;"
     drop_message_queue_table = "DROP TABLE IF EXISTS message_queue;"
+    drop_config_table = "DROP TABLE IF EXISTS config_table;"
 
     cur.execute(drop_consumer_table)
     cur.execute(drop_producer_table)
     cur.execute(drop_topic_table)
     cur.execute(drop_message_queue_table)
+    cur.execute(drop_config_table)
 
     create_consumer_table = "CREATE TABLE consumer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
     create_producer_table = "CREATE TABLE producer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
     create_topic_table = "CREATE TABLE topic (id INTEGER PRIMARY KEY AUTOINCREMENT, name varchar(100) NOT NULL UNIQUE, offset INTEGER NOT NULL, size INTEGER NOT NULL);"
     create_message_queue_table = "CREATE TABLE message_queue (id INTEGER NOT NULL, seq_no INTEGER NOT NULL, message varchar(500), PRIMARY KEY (id, seq_no), FOREIGN KEY(id) REFERENCES topic(id));"
+    create_config_table = "CREATE TABLE config_table (id varchar(100) NOT NULL, last_log_index INTEGER DEFAULT 0, PRIMARY KEY (id));"
 
     cur.execute(create_consumer_table)
     cur.execute(create_producer_table)
     cur.execute(create_topic_table)
     cur.execute(create_message_queue_table)
-
+    cur.execute(create_config_table)
+    cur.execute("INSERT into config_table values('"+ str(id) +"',"+ str(0) +");")
+    
     con.commit()
     close_db_connection(con)
 
@@ -223,6 +233,14 @@ def create_consumer():
     id = request.json.get('id')
 
     command = "INSERT INTO consumer VALUES('" + str(id) + "');"
+    
+    # Add an entry into logs in the Zookeeper
+    
+    log_entry = [command]
+    log_entry_str = delimiter.join(log_entry)
+    zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+
+    # Commit entry into the database
 
     con = get_db_connection()
     cur = con.cursor()
@@ -240,6 +258,14 @@ def delete_consumer():
     # DELETE FROM artists_backup WHERE artistid = 1;
 
     command = "DELETE FROM consumer WHERE id = '" + str(id) + "';"
+    
+    # Add an entry into logs in the Zookeeper
+    
+    log_entry = [command]
+    log_entry_str = delimiter.join(log_entry)
+    zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+
+    # Commit entry into the database
 
     con = get_db_connection()
     cur = con.cursor()
@@ -254,7 +280,16 @@ def create_producer():
     # Get the message from the request body
     id = request.json.get('id')
 
-    command = "INSERT INTO producer VALUES('" + str(id) + "');"
+    command = "INSERT INTO producer VALUES('" + str(   ) + "');"
+    
+    # Add an entry into logs in the Zookeeper
+    
+    log_entry = [command,command]
+    log_entry_str = delimiter.join(log_entry)
+
+    zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+
+    # Commit entry into the database
 
     con = get_db_connection()
     cur = con.cursor()
@@ -272,6 +307,14 @@ def delete_producer():
     # DELETE FROM artists_backup WHERE artistid = 1;
 
     command = "DELETE FROM producer WHERE id = '" + str(id) + "';"
+    
+    # Add an entry into logs in the Zookeeper
+    
+    log_entry = [command]
+    log_entry_str = delimiter.join(log_entry)
+    zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+
+    # Commit entry into the database
 
     con = get_db_connection()
     cur = con.cursor()
@@ -289,6 +332,14 @@ def exists_topic():
     command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
 
     print(command)
+    
+    # Add an entry into logs in the Zookeeper
+    
+    log_entry = [command]
+    log_entry_str = delimiter.join(log_entry)
+    zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+
+    # Commit entry into the database
 
     con = get_db_connection()
     cur = con.cursor()
@@ -315,6 +366,14 @@ def create_topic():
     command = "INSERT INTO topic (name, offset, size) VALUES('" + str(name) + "', 0, 0)" + ";"
 
     print(command)
+    
+    # Add an entry into logs in the Zookeeper
+    
+    log_entry = [command]
+    log_entry_str = delimiter.join(log_entry)
+    zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+
+    # Commit entry into the database
 
     con = get_db_connection()
     cur = con.cursor()
@@ -332,6 +391,14 @@ def delete_topic():
     # DELETE FROM artists_backup WHERE artistid = 1;
 
     command = "DELETE FROM topic WHERE name = '" + str(name) + "';"
+    
+    # Add an entry into logs in the Zookeeper
+    
+    log_entry = [command]
+    log_entry_str = delimiter.join(log_entry)
+    zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+
+    # Commit entry into the database
 
     con = get_db_connection()
     cur = con.cursor()
@@ -341,8 +408,40 @@ def delete_topic():
     return jsonify({'message': 'topic deleted successfully'})
 
 
+def execute_from_log(event):
+    con = get_db_connection()
+    cur = con.cursor()
+    
+    cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+    last_log_index = cur.fetchone()[0]
+    con.commit()
+    
+    print("last : "+str(last_log_index))
+
+    for log in event[last_log_index:]:
+        curr_log = zk.get('/logs/'+log);
+        curr_log = curr_log[0].decode();
+        commands = curr_log.split(delimiter)
+        for command in commands:
+            # Commit entry into the database
+            print(command)
+            cur.execute(command)
+            con.commit()
+            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+            con.commit()
+        last_log_index = last_log_index+1
+    
+    cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+    last_log_index = cur.fetchone()[0]
+    con.commit()
+    print("last now : "+str(last_log_index))
+    close_db_connection(con)
+
+
 if __name__ == '__main__':
     start_election()
     db_init()
+
+    watcher = ChildrenWatch(client=zk, path="/logs", func=execute_from_log)
     app.run(host="0.0.0.0", port=PORT, debug=True, use_debugger=False,
             use_reloader=False, passthrough_errors=True)
