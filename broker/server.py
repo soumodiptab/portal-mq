@@ -45,6 +45,28 @@ def db_init():
     con = get_db_connection()
     cur = con.cursor()
 
+    create_consumer_table = "CREATE TABLE IF NOT EXISTS consumer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
+    create_producer_table = "CREATE TABLE IF NOT EXISTS producer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
+    create_topic_table = "CREATE TABLE IF NOT EXISTS topic (id INTEGER PRIMARY KEY AUTOINCREMENT, name varchar(100) NOT NULL UNIQUE, offset INTEGER NOT NULL, size INTEGER NOT NULL);"
+    create_message_queue_table = "CREATE IF NOT EXISTS TABLE message_queue (id INTEGER NOT NULL, seq_no INTEGER NOT NULL, message varchar(500), PRIMARY KEY (id, seq_no), FOREIGN KEY(id) REFERENCES topic(id));"
+    create_config_table = "CREATE TABLE IF NOT EXISTS config_table (id varchar(100) NOT NULL, last_log_index INTEGER DEFAULT 0, PRIMARY KEY (id));"
+
+    cur.execute(create_consumer_table)
+    cur.execute(create_producer_table)
+    cur.execute(create_topic_table)
+    cur.execute(create_message_queue_table)
+    cur.execute(create_config_table)
+    cur.execute("INSERT OR IGNORE into config_table values('"+ str(id) +"',"+ str(0) +");")
+    
+    con.commit()
+    close_db_connection(con)
+
+
+
+def db_clear():
+    con = get_db_connection()
+    cur = con.cursor()
+
     drop_consumer_table = "DROP TABLE IF EXISTS consumer;"
     drop_producer_table = "DROP TABLE IF EXISTS producer;"
     drop_topic_table = "DROP TABLE IF EXISTS topic;"
@@ -57,22 +79,8 @@ def db_init():
     cur.execute(drop_message_queue_table)
     cur.execute(drop_config_table)
 
-    create_consumer_table = "CREATE TABLE consumer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
-    create_producer_table = "CREATE TABLE producer (id varchar(100) NOT NULL, PRIMARY KEY (id));"
-    create_topic_table = "CREATE TABLE topic (id INTEGER PRIMARY KEY AUTOINCREMENT, name varchar(100) NOT NULL UNIQUE, offset INTEGER NOT NULL, size INTEGER NOT NULL);"
-    create_message_queue_table = "CREATE TABLE message_queue (id INTEGER NOT NULL, seq_no INTEGER NOT NULL, message varchar(500), PRIMARY KEY (id, seq_no), FOREIGN KEY(id) REFERENCES topic(id));"
-    create_config_table = "CREATE TABLE config_table (id varchar(100) NOT NULL, last_log_index INTEGER DEFAULT 0, PRIMARY KEY (id));"
-
-    cur.execute(create_consumer_table)
-    cur.execute(create_producer_table)
-    cur.execute(create_topic_table)
-    cur.execute(create_message_queue_table)
-    cur.execute(create_config_table)
-    cur.execute("INSERT into config_table values('"+ str(id) +"',"+ str(0) +");")
-    
     con.commit()
     close_db_connection(con)
-
 
 def become_leader():
     leader_loc = {'host': HOST, 'port': PORT}
@@ -102,6 +110,11 @@ def election_watcher(event):
 def health():
     return 'Healthy'
 
+@app.route('/db/clear', methods=['GET'])
+def clear():
+    db_clear()
+    db_init()
+    return 'Cleared DB'
 
 @app.route('/publish', methods=['POST'])
 def publish_message():
@@ -543,7 +556,6 @@ def execute_from_log(event):
 if __name__ == '__main__':
     start_election()
     db_init()
-
     watcher = ChildrenWatch(client=zk, path="/logs", func=execute_from_log)
     app.run(host="0.0.0.0", port=PORT, debug=True, use_debugger=False,
             use_reloader=False, passthrough_errors=True)
