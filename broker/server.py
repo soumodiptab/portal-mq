@@ -228,19 +228,26 @@ def create_consumer():
     # Get the message from the request body
     id = request.json.get('id')
 
-    command = "INSERT INTO consumer VALUES(" + str(id) + ");"
-
     con = get_db_connection()
+    
     try:
-        cur = con.cursor()
-        cur.execute(command)
-        con.commit()
-        close_db_connection(con)
+        with con:
+            # Start a transaction
+            con.execute("BEGIN")
+            command = "INSERT INTO consumer VALUES(" + str(id) + ");"
+            cur = con.cursor()
+            cur.execute(command)
+
+            # Commit the transaction
+            con.execute("COMMIT")
         return jsonify({'message': 'consumer created successfully'})
     except:
-        con.abort()
-        close_db_connection(con)
+        # Rollback the transaction if there was an error
+        con.execute("ROLLBACK")
         return jsonify({'message': 'consumer created unsuccessful!!'}), 501
+    finally:
+        print("closing db connection")
+        close_db_connection(con)
 
 
 @app.route("/consumer/delete", methods=['POST'])
@@ -248,41 +255,53 @@ def delete_consumer():
     # Get the message from the request body
     id = request.json.get('id')
 
+    con = get_db_connection()
+
     # DELETE FROM artists_backup WHERE artistid = 1;
     
-    command = "DELETE FROM consumer WHERE id = " + str(id) + ";"
-
-    con = get_db_connection()
     try:
-        cur = con.cursor()
-        cur.execute(command)
-        con.commit()
-        close_db_connection(con)
+        with con:
+            # Start a transaction
+            con.execute("BEGIN")
+            command = "DELETE FROM consumer WHERE id = " + str(id) + ";"
+            cur = con.cursor()
+            cur.execute(command)
+            # Commit the transaction
+            con.execute("COMMIT")
         return jsonify({'message': 'consumer deleted successfully'})
     except:
-        con.abort()
-        close_db_connection(con)
+        # Rollback the transaction if there was an error
+        con.execute("ROLLBACK")
         return jsonify({'message': 'consumer deleted unsuccessful!!'}), 501
+    finally:
+        print("closing db connection")
+        close_db_connection(con)
 
 
 @app.route("/producer/create", methods=['POST'])
 def create_producer():
     # Get the message from the request body
     id = request.json.get('id')
-    
-    command = "INSERT INTO producer VALUES(" + str(id) + ");"
 
     con = get_db_connection()
+    
     try:
-        cur = con.cursor()
-        cur.execute(command)
-        con.commit()
-        close_db_connection(con)
+        with con:
+            # Start a transaction
+            con.execute("BEGIN")
+            command = "INSERT INTO producer VALUES(" + str(id) + ");"
+            cur = con.cursor()
+            cur.execute(command)
+            # Commit the transaction
+            con.execute("COMMIT")
         return jsonify({'message': 'producer created successfully'})
     except:
-        con.abort()
-        close_db_connection(con)
+        # Rollback the transaction if there was an error
+        con.execute("ROLLBACK")
         return jsonify({'message': 'producer creation unsuccessful!!'}), 501
+    finally:
+        print("closing db connection")
+        close_db_connection(con)
 
 
 @app.route("/producer/delete", methods=['POST'])
@@ -290,21 +309,27 @@ def delete_producer():
     # Get the message from the request body
     id = request.json.get('id')
 
-    # DELETE FROM artists_backup WHERE artistid = 1;
-    
-    command = "DELETE FROM producer WHERE id = " + str(id) + ";"
-
     con = get_db_connection()
+
+    # DELETE FROM artists_backup WHERE artistid = 1;
+
     try:
-        cur = con.cursor()
-        cur.execute(command)
-        con.commit()
-        close_db_connection(con)
+        with con:
+            # Start a transaction
+            con.execute("BEGIN")
+            command = "DELETE FROM producer WHERE id = " + str(id) + ";"
+            cur = con.cursor()
+            cur.execute(command)
+            # Commit the transaction
+            con.execute("COMMIT")
         return jsonify({'message': 'producer deleted successfully'})
     except:
-        con.abort()
-        close_db_connection(con)
+        # Rollback the transaction if there was an error
+        con.execute("ROLLBACK")
         return jsonify({'message': 'producer deletion unsuccessful!!'}), 501
+    finally:
+        print("closing db connection")
+        close_db_connection(con)
 
 
 @app.route("/topic/exists", methods=['POST'])
@@ -312,30 +337,33 @@ def exists_topic():
     # Get the message from the request body
     name = request.json.get('name')
 
-    command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
-
-    print(command)
-
     con = get_db_connection()
+    
     try:
-        cur = con.cursor()
-        cur.execute(command)
-        rows = cur.fetchall()
+        with con:
+            # Start a transaction
+            con.execute("BEGIN")
+            command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
+            print(command)
+            cur = con.cursor()
+            cur.execute(command)
+            rows = cur.fetchall()
+            print("len: " + str(len(rows)))
 
-        print("len: " + str(len(rows)))
-
-        con.commit()
-        close_db_connection(con)
+            # Commit the transaction
+            con.execute("COMMIT")
 
         if(len(rows) > 0):
             return jsonify({'message': True})
         else:
             return jsonify({'message': False})
     except:
-        con.abort()
-        close_db_connection(con)
+        # Rollback the transaction if there was an error
+        con.execute("ROLLBACK")
         return jsonify({'message': 'checking unsuccessful!!'}), 501
-
+    finally:
+        print("closing db connection")
+        close_db_connection(con)
 
 @app.route("/topic/create", methods=['POST'])
 def create_topic():
@@ -343,21 +371,27 @@ def create_topic():
     name = request.json.get('name')
     # offset = request.json.get('offset')
 
-    command = "INSERT INTO topic (name, offset, size) VALUES('" + str(name) + "', 0, 0)" + ";"
-
-    print(command)
-
     con = get_db_connection()
+    
     try:
-        cur = con.cursor()
-        cur.execute(command)
-        con.commit()
-        close_db_connection(con)
+        with con:
+            # Start a transaction
+            con.execute("BEGIN")
+
+            command = "INSERT INTO topic (name, offset, size) VALUES('" + str(name) + "', 0, 0)" + ";"
+            print(command)
+            cur = con.cursor()
+            cur.execute(command)
+            # Commit the transaction
+            con.execute("COMMIT")
         return jsonify({'message': 'topic created successfully'})
     except:
-        con.abort()
-        close_db_connection(con)
+        # Rollback the transaction if there was an error
+        con.execute("ROLLBACK")
         return jsonify({'message': 'topic creation unsuccessful!!'}), 501
+    finally:
+        print("closing db connection")
+        close_db_connection(con)
 
 
 @app.route("/topic/delete", methods=['POST'])
@@ -365,22 +399,29 @@ def delete_topic():
     # Get the message from the request body
     name = request.json.get('name')
 
-    # DELETE FROM artists_backup WHERE artistid = 1;
-    
-    command = "DELETE FROM topic WHERE name = '" + str(name) + "';"
-
     con = get_db_connection()
+
+    # DELETE FROM artists_backup WHERE artistid = 1;
+
     try:
-        cur = con.cursor()
-        cur.execute(command)
-        con.commit()
-        close_db_connection(con)
+        with con:
+            # Start a transaction
+            con.execute("BEGIN")
+            command = "DELETE FROM topic WHERE name = '" + str(name) + "';"
+
+            cur = con.cursor()
+            cur.execute(command)
+            # Commit the transaction
+            con.execute("COMMIT")
         return jsonify({'message': 'topic deleted successfully'})
     except:
-        con.abort()
-        close_db_connection(con)
+        # Rollback the transaction if there was an error
+        con.execute("ROLLBACK")
         return jsonify({'message': 'topic deletion unsuccessful!!'}), 501
-
+    finally:
+        print("closing db connection")
+        close_db_connection(con)
+        
 
 if __name__ == '__main__':
     start_election()
