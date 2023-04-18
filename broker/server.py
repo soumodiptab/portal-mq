@@ -12,11 +12,11 @@ import sqlite3
 import json
 
 app = Flask(__name__)
-#id = str(uuid.uuid4())
+#node_id = str(uuid.uuid4())
 HOST = '127.0.0.1'
-PORT = 6000
-#PORT = sys.argv[1]
-id = HOST + str(PORT)
+# PORT = 6000
+PORT = sys.argv[1]
+node_id = HOST + str(PORT)
 zkhost='localhost:2181'
 zk = KazooClient(hosts=zkhost)
 zk.start()
@@ -27,7 +27,7 @@ zk.ensure_path('/election')
 zk.ensure_path('/leader')
 zk.ensure_path('/message_queue')
 zk.ensure_path('/logs')
-election_node = zk.create('/election/node-'+id, ephemeral=True)
+election_node = zk.create('/election/node-'+node_id, ephemeral=True)
 lock = threading.Lock()
 
 # con = sqlite3.connect(str(PORT) + ".sqlite")
@@ -60,7 +60,7 @@ def db_init():
     cur.execute(create_topic_table)
     cur.execute(create_message_queue_table)
     cur.execute(create_config_table)
-    cur.execute("INSERT OR IGNORE into config_table(id, last_log_index) values('"+ str(id) +"',"+ str(0) +");")
+    cur.execute("INSERT OR IGNORE into config_table(id, last_log_index) values('"+ str(node_id) +"',"+ str(0) +");")
     
     con.commit()
     close_db_connection(con)
@@ -139,7 +139,7 @@ def publish_message():
 
     try:
         with con:
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
 
             # Start a transaction
@@ -178,7 +178,7 @@ def publish_message():
             
             #update the last_log_index
 
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             
             # Commit the transaction
             con.execute("COMMIT")
@@ -217,7 +217,7 @@ def consume_message():
 
     try:
         with con:
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
 
             # Start a transaction
@@ -254,7 +254,7 @@ def consume_message():
                 cur.execute(update_command)
                 #update the last_log_index
 
-                cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+                cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
                 return jsonify({'message' : message})
             else:
                 return jsonify({'message': ''}), 204
@@ -310,13 +310,13 @@ def create_consumer():
             
             # Start a transaction
             con.execute("BEGIN")
-            command = "INSERT INTO consumer VALUES(" + str(id) + ");"
+            command = "INSERT INTO consumer VALUES('" + str(id) + "');"
             cur = con.cursor()
             cur.execute(command)
             
             #update the last_log_index
 
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             
             # Commit the transaction
             con.execute("COMMIT")
@@ -357,10 +357,10 @@ def delete_consumer():
             con.execute("BEGIN")
             command = "DELETE FROM consumer WHERE id = " + str(id) + ";"
             cur = con.cursor()
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
             cur.execute(command)
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
             con.execute("COMMIT")
         return jsonify({'message': 'consumer deleted successfully'})
@@ -376,9 +376,9 @@ def delete_consumer():
 @app.route("/producer/create", methods=['POST'])
 def create_producer():
     # Get the message from the request body
-    prod_id = request.json.get('id')
+    id = request.json.get('id')
 
-    command = "INSERT INTO producer VALUES('" + str(prod_id)   + "');"
+    command = "INSERT INTO producer VALUES('" + str(id)   + "');"
     
     # Add an entry into logs in the Zookeeper
     
@@ -395,12 +395,12 @@ def create_producer():
         with con:
             # Start a transaction
             con.execute("BEGIN")
-            command = "INSERT INTO producer VALUES('" + str(prod_id) + "');"
+            command = "INSERT INTO producer VALUES('" + str(id) + "');"
             cur = con.cursor()
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]            
             cur.execute(command)
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
 
             # Commit the transaction
             con.execute("COMMIT")
@@ -437,10 +437,10 @@ def delete_producer():
             con.execute("BEGIN")
             command = "DELETE FROM producer WHERE id = " + str(id) + ";"
             cur = con.cursor()
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]  
             cur.execute(command)
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
             con.execute("COMMIT")
         return jsonify({'message': 'producer deleted successfully'})
@@ -478,9 +478,9 @@ def exists_topic():
             con.execute("BEGIN")
             
             cur = con.cursor()
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]  
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
             print(command)
             cur.execute(command)
@@ -530,10 +530,10 @@ def create_topic():
             command = "INSERT INTO topic (name, offset, size) VALUES('" + str(name) + "', 0, 0)" + ";"
             print(command)
             cur = con.cursor()
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
             cur.execute(command)
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
             con.execute("COMMIT")
         return jsonify({'message': 'topic created successfully'})
@@ -574,10 +574,10 @@ def delete_topic():
             command = "DELETE FROM topic WHERE name = '" + str(name) + "';"
 
             cur = con.cursor()
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
             cur.execute(command)
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
             con.execute("COMMIT")
     except:
@@ -592,11 +592,12 @@ def delete_topic():
 def log_init():
     log_nodes = zk.get_children('/logs')
     # Sort the nodes in ascending order
-    log_nodes.sort()
+    
     execute_from_log(log_nodes)
 
 
 def execute_from_log(event):
+    event.sort()
     lock.acquire()
     if is_leader:
         return 
@@ -604,7 +605,7 @@ def execute_from_log(event):
     con = get_db_connection()
     cur = con.cursor()
     
-    cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
+    cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
     last_log_index = cur.fetchone()[0]
     # con.commit()
     
@@ -622,7 +623,7 @@ def execute_from_log(event):
                     # Commit entry into the database
                     print(command)
                     cur.execute(command)
-                cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(id) + "';")
+                cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
                 con.execute("COMMIT")
         except:
             # Rollback the transaction if there was an error
@@ -642,7 +643,7 @@ def execute_from_log(event):
 if __name__ == '__main__':
     #start_election()
     db_init()
-    #zk.delete("/logs", recursive=True)
+    # zk.delete("/logs", recursive=True)
     # db_clear()
     log_init()
     watcher = ChildrenWatch(client=zk, path="/logs", func=execute_from_log)
