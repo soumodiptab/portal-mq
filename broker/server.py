@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from kazoo.client import KazooClient
 from kazoo.exceptions import NoNodeError
 from kazoo.recipe import election
+from threading import Thread
 from kazoo.recipe.watchers import ChildrenWatch
 import threading
 import uuid
@@ -13,9 +14,9 @@ import json
 app = Flask(__name__)
 #id = str(uuid.uuid4())
 HOST = '127.0.0.1'
-PORT = 5000
+PORT = 6000
 #PORT = sys.argv[1]
-id = HOST + PORT
+id = HOST + str(PORT)
 zkhost='localhost:2181'
 zk = KazooClient(hosts=zkhost)
 zk.start()
@@ -27,6 +28,7 @@ zk.ensure_path('/leader')
 zk.ensure_path('/message_queue')
 zk.ensure_path('/logs')
 election_node = zk.create('/election/node-'+id, ephemeral=True)
+lock = threading.Lock()
 
 # con = sqlite3.connect(str(PORT) + ".sqlite")
 
@@ -92,6 +94,7 @@ def become_leader():
 
 
 def start_election():
+    global is_leader
     # Create an ephemeral node with a unique sequential name
     # Get the list of all ephemeral nodes under /election
     election_nodes = zk.get_children('/election')
@@ -104,10 +107,11 @@ def start_election():
     else: 
         is_leader = False
 
-@zk.ChildrenWatch("/election")
 def election_watcher(event):
+    lock.acquire()
     # If a node is deleted, start a new election
     start_election()
+    lock.release()
 
 
 @app.route('/')
@@ -372,9 +376,9 @@ def delete_consumer():
 @app.route("/producer/create", methods=['POST'])
 def create_producer():
     # Get the message from the request body
-    id = request.json.get('id')
+    prod_id = request.json.get('id')
 
-    command = "INSERT INTO producer VALUES('" + str(id)   + "');"
+    command = "INSERT INTO producer VALUES('" + str(prod_id)   + "');"
     
     # Add an entry into logs in the Zookeeper
     
@@ -391,7 +395,7 @@ def create_producer():
         with con:
             # Start a transaction
             con.execute("BEGIN")
-            command = "INSERT INTO producer VALUES('" + str(id) + "');"
+            command = "INSERT INTO producer VALUES('" + str(prod_id) + "');"
             cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
             last_log_index = cur.fetchone()[0]            
@@ -585,7 +589,15 @@ def delete_topic():
         close_db_connection(con)
         
 
+def log_init():
+    log_nodes = zk.get_children('/logs')
+    # Sort the nodes in ascending order
+    log_nodes.sort()
+    execute_from_log(log_nodes)
+
+
 def execute_from_log(event):
+    lock.acquire()
     if is_leader:
         return 
     
@@ -620,6 +632,7 @@ def execute_from_log(event):
             last_log_index = last_log_index+1
             print("closing db connection")
             close_db_connection(con)
+    lock.release()
     
     # cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
     # last_log_index = cur.fetchone()[0]
@@ -627,10 +640,12 @@ def execute_from_log(event):
 
 
 if __name__ == '__main__':
-    start_election()
+    #start_election()
     db_init()
-    # zk.delete("/logs", recursive=True)
+    #zk.delete("/logs", recursive=True)
     # db_clear()
+    log_init()
     watcher = ChildrenWatch(client=zk, path="/logs", func=execute_from_log)
+    electionWatcher = ChildrenWatch(client=zk, path="/election", func=election_watcher)
     app.run(host="0.0.0.0", port=PORT, debug=True, use_debugger=False,
             use_reloader=False, passthrough_errors=True)
