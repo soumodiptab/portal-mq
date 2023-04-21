@@ -11,9 +11,4 @@ zkhost='localhost:2181'
 zk = KazooClient(hosts=zkhost)
 zk.start()
 clock=zk.Lock('locks/topics/{}'.format("temp_1"),"zoo")
-if clock.rel:
-    print("Zoo down")
-    clock.release()
-else:
-    clock.acquire()
-    print("Zoo up")
+print(clock.contenders())
