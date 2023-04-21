@@ -4,6 +4,7 @@ from kazoo.exceptions import NoNodeError
 from kazoo.recipe import election
 from threading import Thread
 from kazoo.recipe.watchers import ChildrenWatch
+from kazoo.recipe.lock import Lock
 import threading
 import sys
 import uuid
@@ -13,8 +14,8 @@ import json
 app = Flask(__name__)
 #node_id = str(uuid.uuid4())
 HOST = '127.0.0.1'
-# PORT = 6000
-PORT = sys.argv[1]
+PORT = 5000
+# PORT = sys.argv[1]
 node_id = HOST + str(PORT)
 zkhost='localhost:2181'
 zk = KazooClient(hosts=zkhost)
@@ -26,8 +27,13 @@ zk.ensure_path('/election')
 zk.ensure_path('/leader')
 zk.ensure_path('/message_queue')
 zk.ensure_path('/logs')
+zk.ensure_path('/consumers')
+zk.ensure_path('/locks')
+zk.ensure_path('/locks/topics')
 election_node = zk.create('/election/node-'+node_id, ephemeral=True)
 lock = threading.Lock()
+publishLock = threading.Lock()
+consumeLock = threading.Lock()
 
 # con = sqlite3.connect(str(PORT) + ".sqlite")
 
@@ -63,7 +69,6 @@ def db_init():
     
     con.commit()
     close_db_connection(con)
-
 
 
 def db_clear():
@@ -123,6 +128,14 @@ def clear():
     db_init()
     return 'Cleared DB'
 
+def topic_lock(topic):
+    clock =zk.Lock('locks/topics/{}'.format(topic),node_id)
+    if len(clock.contenders()) == 0:
+        clock.acquire()
+
+def topic_unlock(topic):
+    clock =zk.Lock('locks/topics/{}'.format(topic),node_id)
+    clock.release()
 #TESTED
 @app.route('/publish', methods=['POST'])
 def publish_message():
@@ -131,10 +144,9 @@ def publish_message():
     # # Create a new znode with the message as the data
     # zk.create('/message_queue/message_', value=message.encode(), sequence=True)
     # return 'Message published successfully.'
-
     name = request.json.get('name')
     message = request.json.get('message')
-
+    # publishLock.acquire()
     con = get_db_connection()
 
     try:
@@ -183,6 +195,7 @@ def publish_message():
             
             # Commit the transaction
             con.execute("COMMIT")
+            topic_unlock(name)
             
         return jsonify({'message': 'published in topic successfully'})
     except:
@@ -192,6 +205,45 @@ def publish_message():
     finally:
         print("closing db connection")
         close_db_connection(con)
+        # publishLock.release()
+
+@app.route('/read', methods=['POST'])
+def read_message():
+    name = request.json.get('name')
+    con = get_db_connection()
+
+    try:
+        with con:
+            cur = con.cursor()
+
+            # Start a transaction
+            con.execute("BEGIN")
+
+            # Reading id, size from topic table
+            command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
+            cur.execute(command)
+            records = cur.fetchall()
+
+            id = records[0][0]
+            offset = records[0][2]
+            size = records[0][3]
+
+            if(offset < size):
+                fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
+                cur.execute(fetch_command)
+                records = cur.fetchall()
+                message = records[0][2]
+                return jsonify({'message' : message, 'offset' : offset+1})
+            else:
+                return jsonify({'message': ''}), 204
+    except:
+        # Rollback the transaction if there was an error
+        con.execute("ROLLBACK")
+        return jsonify({'message': 'error consuming message'}), 501
+    finally:
+        print("closing db connection")
+        close_db_connection(con)
+        # consumeLock.release()
 
 #TESTED
 @app.route('/consume', methods=['POST'])
@@ -212,8 +264,8 @@ def consume_message():
     #     return message
     # else:
     #     return 'No messages in the queue.'
-
     name = request.json.get('name')
+    seq_no = request.json.get('offset')
     con = get_db_connection()
 
     try:
@@ -234,8 +286,8 @@ def consume_message():
             offset = records[0][2]
             size = records[0][3]
 
-            if(offset < size):
-                fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
+            if(seq_no < size and seq_no == offset+1):
+                # fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
                 update_command = "UPDATE topic SET offset = " + str(offset+1) + " WHERE name = '" + str(name) + "';"
                 
                 # Add an entry into logs in the Zookeeper
@@ -246,9 +298,9 @@ def consume_message():
 
                 # Fetch from message_queue table
                
-                cur.execute(fetch_command)
-                records = cur.fetchall()
-                message = records[0][2]
+                # cur.execute(fetch_command)
+                # records = cur.fetchall()
+                # message = records[0][2]
 
                 # Update topic table, increase offset
                 
@@ -256,9 +308,12 @@ def consume_message():
                 #update the last_log_index
 
                 cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
-                return jsonify({'message' : message})
+                if offset+1 == size:
+                    topic_lock(name)
+                con.execute("COMMIT")
+                return jsonify({'message' : 'consumed'})
             else:
-                return jsonify({'message': ''}), 204
+                return jsonify({'message': 'not consumed'}), 204
     except:
         # Rollback the transaction if there was an error
         con.execute("ROLLBACK")
@@ -510,7 +565,6 @@ def create_topic():
     # Get the message from the request body
     name = request.json.get('name')
     # offset = request.json.get('offset')
-
     command = "INSERT INTO topic (name, offset, size) VALUES('" + str(name) + "', 0, 0)" + ";"
 
     print(command)
@@ -539,6 +593,9 @@ def create_topic():
             cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
             con.execute("COMMIT")
+            zk.ensure_path('locks/topics/{}'.format(name))
+            # zk.ensure_path('/topic/{}/listeners'.format(name))
+            # zk.ensure_path('/topic/{}/locks'.format(name))
         return jsonify({'message': 'topic created successfully'})
     except:
         # Rollback the transaction if there was an error
@@ -583,6 +640,12 @@ def delete_topic():
             cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
             con.execute("COMMIT")
+            try:
+                clock =zk.Lock('locks/topics/{}'.format(name))
+                clock.cancel()
+                zk.delete('locks/topics/{}'.format(name))
+            except NoNodeError:
+                pass
         return jsonify({'message': 'topic deleted successfully'})
     except:
         # Rollback the transaction if there was an error
@@ -644,6 +707,14 @@ def execute_from_log(event):
     # cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
     # last_log_index = cur.fetchone()[0]
     # print("last now : "+str(last_log_index))
+
+
+# def inform_consumers(topic):
+#     consumers_ts = zk.get_children('/topic/{}/consumers'.format(topic))
+#     for consumer_ts in consumers_ts:
+#         consumer = zk.get('/topic/{}/{}'.format(topic, consumer_ts))[0].decode()
+#         clock = zk.Lock('/topic/{}/locks/{}'.format(topic, consumer_ts))
+#         clock.
 
 
 if __name__ == '__main__':

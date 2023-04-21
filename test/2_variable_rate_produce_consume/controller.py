@@ -9,7 +9,7 @@ import random
 config = json.load(open('config.json'))['brokers']
 import signal
 
-sensor = None
+controller = None
 
 class CONTROLLER(threading.Thread):
     def __init__(self, topic, sleep_time=0):
@@ -24,15 +24,14 @@ class CONTROLLER(threading.Thread):
 
     def set_consumer(self):
         self.client = PortalClient(config)
-        self.consumer = PortalConsumer(config, self.topic)
+        self.consumer = PortalConsumer(self.client)
 
     def do_action(self, message):
-        data = message.value["data"]
-        print("<{}:{}> : ::\t{}\t::".format(self.ip, self.port, data))
+        print(message)
 
     def run(self):
         while True:
-            message = self.consumer.consume_message(self.topic)
+            message = self.consumer.get_message(self.topic)
             self.do_action(message)
             if self._stopevent.isSet():
                 break
@@ -43,17 +42,13 @@ class CONTROLLER(threading.Thread):
 
 def handler(signum, frame):
     print('Shutting down sensor...')
-    sensor.stop()
+    controller.stop()
 
 
 signal.signal(signal.SIGINT, handler)
 
 if __name__ == '__main__':
-    sensor_name = sys.argv[1]
-    sensor_id = sys.argv[2]
-    sensor_timeout = sys.argv[3]
-    if sensor_name == 'temp':
-        sensor = TEMP('temp',sensor_id,sensor_timeout)
-        sensor.start()
-    else:
-        print('Invalid sensor name')
+    # controller_topic = sys.argv[1]
+    controller_topic = 'temp_1'
+    controller = CONTROLLER(controller_topic)
+    controller.start()

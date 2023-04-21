@@ -14,6 +14,8 @@ sensor = None
 class SENSOR(threading.Thread):
     def __init__(self, name, id,sleep_time=5):
         threading.Thread.__init__(self)
+        self.name = name
+        self.id = id
         self.topic = name+'_'+id
         print('==============================================================')
         print('Sensor topic: ', self.topic)
@@ -38,9 +40,6 @@ class SENSOR(threading.Thread):
     def timeout(self):
         time.sleep(self.sleep_time)
 
-    def close(self):
-        if self.producer:
-            self.producer.close()
 
     def run(self):
         try:
@@ -49,8 +48,6 @@ class SENSOR(threading.Thread):
                 self.timeout()
         except Exception as e:
             print(e)
-        finally:
-            self.close()
 
     def stop(self):
         self._stopevent.set()
@@ -72,9 +69,12 @@ def handler(signum, frame):
 signal.signal(signal.SIGINT, handler)
 
 if __name__ == '__main__':
-    sensor_name = sys.argv[1]
-    sensor_id = sys.argv[2]
-    sensor_timeout = sys.argv[3]
+    # sensor_name = sys.argv[1]
+    # sensor_id = sys.argv[2]
+    # sensor_timeout = sys.argv[3]
+    sensor_name = 'temp'
+    sensor_id = '1'
+    sensor_timeout = 5
     if sensor_name == 'temp':
         sensor = TEMP('temp',sensor_id,sensor_timeout)
         sensor.start()

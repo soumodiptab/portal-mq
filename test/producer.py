@@ -6,11 +6,11 @@ class PortalProducer:
 
     def register(self):
         resp,_=self.client.request('POST','/producer/create',data={})
-        print(resp)
+        # print(resp)
 
     def unregister(self):
         resp,_=self.client.request('POST','/producer/delete',data={})
-        print(resp)
+        # print(resp)
 
     def is_exists_topic(self,topic):
         data = {
@@ -24,7 +24,7 @@ class PortalProducer:
             "name":topic
         }
         resp,_=self.client.request('POST','/topic/create',data)
-        print(resp['message'])
+        # print(resp['message'])
 
     def send_message(self,topic,message:str):
         if not self.is_exists_topic(topic):
@@ -33,8 +33,11 @@ class PortalProducer:
             "name":topic,
             "message":message
         }
-        resp,status=self.client.request('POST','/publish',data)
-        print(resp)
+        while True:
+            resp,status=self.client.request('POST','/publish',data)
+            if status == 200:
+                break
+        # print(resp)
 
     def __del__(self):
         self.unregister()
