@@ -5,7 +5,7 @@ import json
 import logging
 TIMEOUT_CONNECT = 5
 TIMEOUT_REQUEST = 3
-MAX_RETRY = 5
+MAX_RETRY = 10
 # LOG_FORMAT = '%(process)d-%(levelname)s-%(asctime)s--%(message)s'
 # logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
 # log = logging.getLogger(__name__)

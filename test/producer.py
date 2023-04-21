@@ -36,5 +36,5 @@ class PortalProducer:
         resp,status=self.client.request('POST','/publish',data)
         print(resp)
 
-    # def __del__(self):
-    #     self.unregister()
+    def __del__(self):
+        self.unregister()
