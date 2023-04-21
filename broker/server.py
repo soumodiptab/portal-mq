@@ -19,7 +19,7 @@ app = Flask(__name__)
 HOST = '127.0.0.1'
 # PORT = 6000
 PORT = sys.argv[1]
-node_id = HOST + str(PORT)
+node_id = HOST + ":" +str(PORT)
 zkhost='localhost:2181'
 zk = KazooClient(hosts=zkhost)
 zk.start()
@@ -31,6 +31,7 @@ zk.ensure_path('/leader')
 zk.ensure_path('/message_queue')
 zk.ensure_path('/logs')
 election_node = zk.create('/election/node-'+node_id, ephemeral=True)
+zk.set('/election/node-'+node_id, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S").encode())
 lock = threading.Lock()
 
 # con = sqlite3.connect(str(PORT) + ".sqlite")
@@ -126,8 +127,9 @@ def start_election():
     # Create an ephemeral node with a unique sequential name
     # Get the list of all ephemeral nodes under /election
     election_nodes = zk.get_children('/election')
+    node_path = '/election'
+    election_nodes = sorted(election_nodes, key=lambda c: zk.get(f"{node_path}/{c}")[0].decode())
     # Sort the nodes in ascending order
-    election_nodes.sort()
     # If this node has the lowest sequence number, it becomes the leader
     if election_node == f'/election/{election_nodes[0]}':
         become_leader()
@@ -181,12 +183,10 @@ def publish_message():
 
             # Reading id, size from topic table
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
-
-            
            
             cur.execute(command)
             records = cur.fetchall()
-
+            
             id = records[0][0]
             size = records[0][3]
             new_size = size+1
@@ -218,6 +218,7 @@ def publish_message():
             # con.execute("COMMIT")
             con.commit()
             printlog("[COMMITTED]", "GREEN")
+            printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
         return jsonify({'message': 'published in topic successfully'})
     except:
         # Rollback the transaction if there was an error
@@ -267,7 +268,7 @@ def consume_message():
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
             cur.execute(command)
             records = cur.fetchall()
-
+            
             id = records[0][0]
             offset = records[0][2]
             size = records[0][3]
@@ -306,7 +307,7 @@ def consume_message():
         # Rollback the transaction if there was an error
         # con.execute("ROLLBACK")
         con.rollback()
-        printlog("[ROLLBACKED]")
+        printlog("[ROLLBACKED]","RED")
         return jsonify({'message': 'error consuming message'}), 501
     finally:
         # printlog("CLOSING DB")
@@ -395,7 +396,7 @@ def delete_consumer():
 
     # DELETE FROM artists_backup WHERE artistid = 1;
 
-    # command = "DELETE FROM consumer WHERE id = '" + str(id) + "';"
+    command = "DELETE FROM consumer WHERE id = '" + str(id) + "';"
     con = get_db_connection()
     cur = con.cursor()
     cur.execute(exists_command)
@@ -763,7 +764,7 @@ def execute_from_log(event):
 
 
 if __name__ == '__main__':
-    #start_election()
+    # start_election()
     db_init()
     # zk.delete("/logs", recursive=True)
     # db_clear()
