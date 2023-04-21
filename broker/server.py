@@ -266,18 +266,22 @@ def consume_message():
 
             # Reading id, size from topic table
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
+            # print(command)
             cur.execute(command)
             records = cur.fetchall()
-            
+
             id = records[0][0]
             offset = records[0][2]
             size = records[0][3]
 
-            printlog("[TOPIC OFFSET] :"+ str(offset), "YELLOW")
+            printlog("[TOPIC OFFSET] :"+str(offset), "YELLOW")
 
             if(offset < size):
                 fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
                 update_command = "UPDATE topic SET offset = " + str(offset+1) + " WHERE name = '" + str(name) + "';"
+
+                
+                #print(update_command)
                 
                 # Add an entry into logs in the Zookeeper
     
@@ -289,6 +293,7 @@ def consume_message():
                 # Fetch from message_queue table
                
                 cur.execute(fetch_command)
+                printcommand(fetch_command)
                 records = cur.fetchall()
                 message = records[0][2]
 
@@ -298,9 +303,9 @@ def consume_message():
                 #update the last_log_index
 
                 cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
-                cur.commit()
                 printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
-                return jsonify({'message' : message})   
+                con.commit()
+                return jsonify({'message' : message})
             else:
                 printlog("OFFSET EXCEEDS QUEUE SIZE","RED")
                 return jsonify({'message': ''}), 204
