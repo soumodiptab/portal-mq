@@ -10,7 +10,11 @@ import sys
 import uuid
 import sqlite3
 import json
+import datetime
+import colorama
 
+# Initialize colorama
+colorama.init()
 app = Flask(__name__)
 #node_id = str(uuid.uuid4())
 HOST = '127.0.0.1'
@@ -31,11 +35,37 @@ zk.ensure_path('/consumers')
 zk.ensure_path('/locks')
 zk.ensure_path('/locks/topics')
 election_node = zk.create('/election/node-'+node_id, ephemeral=True)
+zk.set('/election/node-'+node_id, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S").encode())
 lock = threading.Lock()
 publishLock = threading.Lock()
 consumeLock = threading.Lock()
 
 # con = sqlite3.connect(str(PORT) + ".sqlite")
+
+def printlog(str,mode="WHITE"):
+    now = datetime.datetime.now()
+    if mode == "GREEN":
+        print(colorama.Fore.GREEN,end="")
+    elif mode == "RED":
+        print(colorama.Fore.RED,end="")
+    elif mode == "YELLOW":
+        print(colorama.Fore.YELLOW,end="") 
+    elif mode == "BLUE":
+        print(colorama.Fore.BLUE,end="") 
+    print(now,str)
+    print(colorama.Style.RESET_ALL,end="")
+
+def printcommand(str,mode="GREEN"):
+    now = datetime.datetime.now()
+    if mode == "GREEN":
+        print(colorama.Fore.GREEN,end="")
+    elif mode == "RED":
+        print(colorama.Fore.RED,end="")
+    elif mode == "YELLOW":
+        print(colorama.Fore.YELLOW,end="") 
+
+    print(now,"[EXECUTED]", str)
+    print(colorama.Style.RESET_ALL,end="")    
 
 
 # Define a function to connect to the database
@@ -102,8 +132,9 @@ def start_election():
     # Create an ephemeral node with a unique sequential name
     # Get the list of all ephemeral nodes under /election
     election_nodes = zk.get_children('/election')
+    node_path = '/election'
+    election_nodes = sorted(election_nodes, key=lambda c: zk.get(f"{node_path}/{c}")[0].decode())
     # Sort the nodes in ascending order
-    election_nodes.sort()
     # If this node has the lowest sequence number, it becomes the leader
     if election_node == f'/election/{election_nodes[0]}':
         become_leader()
@@ -152,23 +183,26 @@ def publish_message():
     try:
         with con:
             cur = con.cursor()
+            # printlog("CONNECTING DB")
+
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
+
+            printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")
 
             # Start a transaction
             con.execute("BEGIN")
 
             # Reading id, size from topic table
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
-
-            
+           
             cur.execute(command)
             records = cur.fetchall()
-
+            
             id = records[0][0]
             size = records[0][3]
             new_size = size+1
-            
+            printlog("[TOPIC] : " + str(size), "YELLOW")
 
             # Update the size of the existing queue in topic table
             update_command = "UPDATE topic SET size = " + str(new_size) + " WHERE name = '" + str(name) + "';"
@@ -176,34 +210,37 @@ def publish_message():
             write_command = "INSERT INTO message_queue VALUES(" + str(id) + ", " + str(seq_no) + ", '" + str(message) + "');"
             
             # Add an entry into logs in the Zookeeper
-    
             log_entry = [update_command,write_command]
             log_entry_str = delimiter.join(log_entry)
             zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+            printlog("[NEW LOG PUBLISHED] { " + log_entry_str + " }", "YELLOW")
 
             # Commit entry into the database
-            
             cur.execute(update_command)
-            
+            printcommand(update_command)
+           
             # Write in the message_queue table
-            
             cur.execute(write_command)
+            printcommand(write_command)
             
             #update the last_log_index
-
             cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             
             # Commit the transaction
-            con.execute("COMMIT")
+            # con.execute("COMMIT")
+            con.commit()
             topic_unlock(name)
-            
+            printlog("[COMMITTED]", "GREEN")
+            printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
         return jsonify({'message': 'published in topic successfully'})
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        # con.execute("ROLLBACK")
+        con.rollback()
+        printlog("[ROLLBACKED]", "RED")
         return jsonify({'message': 'error publishing message'}), 501
     finally:
-        print("closing db connection")
+        # printlog("CLOSING DB")
         close_db_connection(con)
         # publishLock.release()
 
@@ -271,9 +308,11 @@ def consume_message():
     try:
         with con:
             cur = con.cursor()
+            # printlog("CONNECTING DB")
+
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
-
+            printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")
             # Start a transaction
             con.execute("BEGIN")
 
@@ -281,13 +320,15 @@ def consume_message():
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
             cur.execute(command)
             records = cur.fetchall()
-
+            
             id = records[0][0]
             offset = records[0][2]
             size = records[0][3]
 
+            printlog("[TOPIC OFFSET] :"+ str(offset), "YELLOW")
+
             if(seq_no < size and seq_no == offset+1):
-                # fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
+                fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
                 update_command = "UPDATE topic SET offset = " + str(offset+1) + " WHERE name = '" + str(name) + "';"
                 
                 # Add an entry into logs in the Zookeeper
@@ -295,6 +336,7 @@ def consume_message():
                 log_entry = [update_command]
                 log_entry_str = delimiter.join(log_entry)
                 zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+                printlog("[NEW LOG PUBLISHED] { " + log_entry_str + " }")
 
                 # Fetch from message_queue table
                
@@ -308,18 +350,22 @@ def consume_message():
                 #update the last_log_index
 
                 cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
+                cur.commit()
                 if offset+1 == size:
                     topic_lock(name)
-                con.execute("COMMIT")
-                return jsonify({'message' : 'consumed'})
+                printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
+                return jsonify({'message' : ''})   
             else:
-                return jsonify({'message': 'not consumed'}), 204
+                printlog("OFFSET EXCEEDS QUEUE SIZE","RED")
+                return jsonify({'message': ''}), 204
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        # con.execute("ROLLBACK")
+        con.rollback()
+        printlog("[ROLLBACKED]","RED")
         return jsonify({'message': 'error consuming message'}), 501
     finally:
-        print("closing db connection")
+        # printlog("CLOSING DB")
         close_db_connection(con)
 
 
@@ -354,10 +400,11 @@ def create_consumer():
     log_entry = [command]
     log_entry_str = delimiter.join(log_entry)
     zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
-
+    printlog("[NEW LOG PUBLISHED] { " + log_entry_str + " }","YELLOW")
+    
     # Commit entry into the database
-
     con = get_db_connection()
+    # printlog("CONNECTING DB")
     
     try:
         with con:
@@ -365,25 +412,32 @@ def create_consumer():
             con.execute("BEGIN")
             cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
-            last_log_index = cur.fetchone()[0]
             
+            last_log_index = cur.fetchone()[0]
+            printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")
             command = "INSERT INTO consumer VALUES('" + str(id) + "');"
             
             cur.execute(command)
-            
+            printcommand(command)
+
             #update the last_log_index
 
             cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             
             # Commit the transaction
-            con.execute("COMMIT")
+            # con.execute("COMMIT")
+            con.commit()
+            printlog("[COMMITTED]","GREEN")
+            printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
         return jsonify({'message': 'consumer created successfully'})
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        # con.execute("ROLLBACK")
+        con.rollback()
+        printlog("[ROLLBACKED]","RED")
         return jsonify({'message': 'consumer created unsuccessful!!'}), 501
     finally:
-        print("closing db connection")
+        # printlog("CLOSING DB")
         close_db_connection(con)
 
 #TESTED
@@ -392,42 +446,61 @@ def delete_consumer():
     # Get the message from the request body
     id = request.json.get('id')
 
+    exists_command = "SELECT * FROM consumer WHERE id = '" + str(id) + "';"
+
+
     # DELETE FROM artists_backup WHERE artistid = 1;
 
     command = "DELETE FROM consumer WHERE id = '" + str(id) + "';"
-    
-    # Add an entry into logs in the Zookeeper
-    
-    log_entry = [command]
-    log_entry_str = delimiter.join(log_entry)
-    zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
-
-    # Commit entry into the database
-
     con = get_db_connection()
+    cur = con.cursor()
+    cur.execute(exists_command)
+    rows = cur.fetchall()
+    if(len(rows) >= 1):
+        # Add an entry into logs in the Zookeeper
+        
+        log_entry = [command]
+        log_entry_str = delimiter.join(log_entry)
+        zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+        printlog("[NEW LOG PUBLISHED] { " + log_entry_str + " }","YELLOW")
 
-    # DELETE FROM artists_backup WHERE artistid = 1;
-    
-    try:
-        with con:
-            # Start a transaction
-            con.execute("BEGIN")
-            command = "DELETE FROM consumer WHERE id = '" + str(id) + "';"
-            cur = con.cursor()
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
-            last_log_index = cur.fetchone()[0]
-            cur.execute(command)
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
-            # Commit the transaction
-            con.execute("COMMIT")
-        return jsonify({'message': 'consumer deleted successfully'})
-    except:
-        # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
-        return jsonify({'message': 'consumer deleted unsuccessful!!'}), 501
-    finally:
-        print("closing db connection")
-        close_db_connection(con)
+        # Commit entry into the database
+
+        # con = get_db_connection()
+        # printlog("CONNECTING DB")
+        
+        # DELETE FROM artists_backup WHERE artistid = 1;
+        try:
+            with con:
+                # Start a transaction
+                con.execute("BEGIN")
+                command = "DELETE FROM consumer WHERE id = '" + str(id) + "';"
+                cur = con.cursor()
+                cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
+                last_log_index = cur.fetchone()[0]
+                printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")
+                cur.execute(command)
+                printcommand(command)
+                cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
+                # Commit the transaction
+                # con.execute("COMMIT")
+                con.commit()
+                printlog("[COMMITTED]","GREEN")
+                printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
+            return jsonify({'message': 'consumer deleted successfully'})
+        except:
+            # Rollback the transaction if there was an error
+            # con.execute("ROLLBACK")
+            con.rollback()
+            printlog("[ROLLBACKED]","RED")
+            return jsonify({'message': 'consumer deleted unsuccessful!!'}), 501
+        finally:
+            # printlog("CLOSING DB")
+            close_db_connection(con)
+    else:
+        printlog("[Consumer NOT EXISTS]","GREEN")
+        return jsonify({'message': 'consumer not exists!!'}), 501
+
 
 #TESTED
 @app.route("/producer/create", methods=['POST'])
@@ -443,11 +516,12 @@ def create_producer():
     log_entry_str = delimiter.join(log_entry)
 
     zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+    printlog("[NEW LOG PUBLISHED] { " + log_entry_str + " }", "YELLOW")
 
     # Commit entry into the database
 
     con = get_db_connection()
-    
+    # printlog("CONNECTING DB")
     try:
         with con:
             # Start a transaction
@@ -455,19 +529,26 @@ def create_producer():
             command = "INSERT INTO producer VALUES('" + str(id) + "');"
             cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
-            last_log_index = cur.fetchone()[0]            
+            last_log_index = cur.fetchone()[0]     
+            printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")       
             cur.execute(command)
+            printcommand(command)
             cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
 
             # Commit the transaction
-            con.execute("COMMIT")
+            # con.execute("COMMIT")
+            con.commit()
+            printlog("[COMMITTED]", "GREEN")
+            printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
         return jsonify({'message': 'producer created successfully'})
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        con.rollback()
+        # con.execute("ROLLBACK")
+        printlog("[ROLLBACKED]", "RED")
         return jsonify({'message': 'producer creation unsuccessful!!'}), 501
     finally:
-        print("closing db connection")
+        # printlog("CLOSING DB")
         close_db_connection(con)
 
 #TESTED
@@ -476,18 +557,19 @@ def delete_producer():
     # Get the message from the request body
     id = request.json.get('id')
 
-    con = get_db_connection()
+    
 
     command = "DELETE FROM producer WHERE id = '" + str(id) + "';"
     
     # Add an entry into logs in the Zookeeper
-    
     log_entry = [command]
     log_entry_str = delimiter.join(log_entry)
     zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
-
+    printlog("[NEW LOG PUBLISHED] { " + log_entry_str + " }", "YELLOW")
+    
     # Commit entry into the database
-
+    con = get_db_connection()
+    # printlog("CONNECTING DB")
     try:
         with con:
             # Start a transaction
@@ -495,18 +577,25 @@ def delete_producer():
             command = "DELETE FROM producer WHERE id = '" + str(id) + "';"
             cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
-            last_log_index = cur.fetchone()[0]  
+            last_log_index = cur.fetchone()[0] 
+            printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW") 
             cur.execute(command)
+            printcommand(command)
             cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
-            con.execute("COMMIT")
+            # con.execute("COMMIT")
+            con.commit()
+            printlog("[COMMITTED]", "GREEN")
+            printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
         return jsonify({'message': 'producer deleted successfully'})
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        # con.execute("ROLLBACK")
+        con.rollback()
+        printlog("[ROLLBACKED]", "RED")
         return jsonify({'message': 'producer deletion unsuccessful!!'}), 501
     finally:
-        print("closing db connection")
+        # printlog("CLOSING DB")
         close_db_connection(con)
 
 #TESTED
@@ -517,7 +606,7 @@ def exists_topic():
 
     command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
 
-    print(command)
+    
     
     # Add an entry into logs in the Zookeeper
     
@@ -528,7 +617,7 @@ def exists_topic():
     # Commit entry into the database
 
     con = get_db_connection()
-    
+    # printlog("CONNECTING DB")
     try:
         with con:
             # Start a transaction
@@ -539,24 +628,28 @@ def exists_topic():
             # last_log_index = cur.fetchone()[0]  
             # cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
-            print(command)
+            
             cur.execute(command)
+            printcommand(command)
             rows = cur.fetchall()
             print("len: " + str(len(rows)))
 
             # Commit the transaction
-            con.execute("COMMIT")
-
+            # con.execute("COMMIT") 
+            con.commit()  
         if(len(rows) > 0):
+            printlog("[TOPIC FOUND]", "GREEN")
             return jsonify({'message': True})
         else:
+            printlog("[TOPIC NOT FOUND]", "RED")
             return jsonify({'message': False})
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        # con.execute("ROLLBACK")
+        con.rollback()
         return jsonify({'message': 'checking unsuccessful!!'}), 501
     finally:
-        print("closing db connection")
+        # printlog("CLOSING DB")
         close_db_connection(con)
 
 #TESTED
@@ -574,35 +667,39 @@ def create_topic():
     log_entry = [command]
     log_entry_str = delimiter.join(log_entry)
     zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
-
+    printlog("[NEW LOG PUBLISHED] { " + log_entry_str + " }", "YELLOW")
     # Commit entry into the database
 
     con = get_db_connection()
-    
+    # printlog("CONNECTING DB")    
     try:
         with con:
             # Start a transaction
             con.execute("BEGIN")
 
             command = "INSERT INTO topic (name, offset, size) VALUES('" + str(name) + "', 0, 0)" + ";"
-            print(command)
+            printcommand(command)
             cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
+            printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")
             cur.execute(command)
             cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
-            con.execute("COMMIT")
+            # con.execute("COMMIT")
+            con.commit()
+            printlog("[COMMITTED]", "GREEN")
+            printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
             zk.ensure_path('locks/topics/{}'.format(name))
-            # zk.ensure_path('/topic/{}/listeners'.format(name))
-            # zk.ensure_path('/topic/{}/locks'.format(name))
         return jsonify({'message': 'topic created successfully'})
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        # con.execute("ROLLBACK")
+        con.rollback()
+        printlog("[ROLLBACKED]", "RED")
         return jsonify({'message': 'topic creation unsuccessful!!'}), 501
     finally:
-        print("closing db connection")
+        # printlog("CLOSING DB")
         close_db_connection(con)
 
 #TESTED
@@ -620,11 +717,11 @@ def delete_topic():
     log_entry = [command]
     log_entry_str = delimiter.join(log_entry)
     zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
-
+    printlog("[NEW LOG PUBLISHED] { " + log_entry_str + " }", "YELLOW" )
     # Commit entry into the database
 
     con = get_db_connection()
-
+    # printlog("CONNECTING DB")
     # DELETE FROM artists_backup WHERE artistid = 1;
 
     try:
@@ -636,23 +733,30 @@ def delete_topic():
             cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
+            printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")
             cur.execute(command)
+            printcommand(command)
             cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
-            con.execute("COMMIT")
+            # con.execute("COMMIT")
+            con.commit()
             try:
                 clock =zk.Lock('locks/topics/{}'.format(name))
                 clock.cancel()
                 zk.delete('locks/topics/{}'.format(name))
             except NoNodeError:
                 pass
+            printlog("[COMMITTED]","GREEN")
+            printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
         return jsonify({'message': 'topic deleted successfully'})
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        # con.execute("ROLLBACK")
+        con.rollback()
+        printlog("[ROLLBACKED]","RED")
         return jsonify({'message': 'topic deletion unsuccessful!!'}), 501
     finally:
-        print("closing db connection")
+        # printlog("CLOSING DB")
         close_db_connection(con)
         
 
@@ -666,10 +770,14 @@ def log_init():
 def execute_from_log(event):
     event.sort()
     lock.acquire()
+ 
     if is_leader:
         return 
     
+    printlog("[READING LOG]","BLUE")
+    
     con = get_db_connection()
+    # printlog("CONNECTING DB")
     try:
         with con:
             cur = con.cursor()
@@ -678,8 +786,8 @@ def execute_from_log(event):
             last_log_index = cur.fetchone()[0]
             # con.commit()
             
-            print("last : "+str(last_log_index))
-
+            printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")
+    
             for log in event[last_log_index:]:
                 curr_log = zk.get('/logs/'+log);
                 curr_log = curr_log[0].decode();
@@ -689,20 +797,27 @@ def execute_from_log(event):
                 con.execute("BEGIN")
                 for command in commands:
                     # Commit entry into the database
-                    print(command)
                     cur.execute(command)
+                    printcommand(command)
                 cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
-                con.execute("COMMIT")
+                # con.execute("COMMIT")
+                con.commit()
+                printlog("[COMMITTED]","GREEN")
                 last_log_index = last_log_index+1
+                printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        # con.execute("ROLLBACK")
+        # con.rollback()
+        con.rollback()
+        printlog("[ROLLBACKED]","RED")
         return jsonify({'message': 'topic deletion unsuccessful!!'}), 501
     finally:
         #last_log_index = last_log_index+1
-        print("closing db connection")
+        # printlog("CLOSING DB")
         close_db_connection(con)
     lock.release()
+   
     
     # cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
     # last_log_index = cur.fetchone()[0]
@@ -718,10 +833,11 @@ def execute_from_log(event):
 
 
 if __name__ == '__main__':
-    #start_election()
+    # start_election()
     db_init()
-    #zk.delete("/logs", recursive=True)
+    # zk.delete("/logs", recursive=True)
     # db_clear()
+    
     log_init()
     watcher = ChildrenWatch(client=zk, path="/logs", func=execute_from_log)
     electionWatcher = ChildrenWatch(client=zk, path="/election", func=election_watcher)
