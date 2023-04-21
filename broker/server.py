@@ -5,7 +5,6 @@ from kazoo.recipe import election
 from threading import Thread
 from kazoo.recipe.watchers import ChildrenWatch
 import threading
-import uuid
 import sys
 import uuid
 import sqlite3
@@ -20,7 +19,7 @@ node_id = HOST + str(PORT)
 zkhost='localhost:2181'
 zk = KazooClient(hosts=zkhost)
 zk.start()
-delimiter =','
+delimiter ='##'
 last_log_index = 0
 is_leader = False
 zk.ensure_path('/election')
@@ -124,6 +123,7 @@ def clear():
     db_init()
     return 'Cleared DB'
 
+#TESTED
 @app.route('/publish', methods=['POST'])
 def publish_message():
     # # Get the message from the request body
@@ -139,6 +139,7 @@ def publish_message():
 
     try:
         with con:
+            cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
 
@@ -148,7 +149,7 @@ def publish_message():
             # Reading id, size from topic table
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
 
-            cur = con.cursor()
+            
             cur.execute(command)
             records = cur.fetchall()
 
@@ -192,7 +193,7 @@ def publish_message():
         print("closing db connection")
         close_db_connection(con)
 
-
+#TESTED
 @app.route('/consume', methods=['POST'])
 def consume_message():
     # # Get the current leader of the election
@@ -217,6 +218,7 @@ def consume_message():
 
     try:
         with con:
+            cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
 
@@ -225,7 +227,6 @@ def consume_message():
 
             # Reading id, size from topic table
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
-            cur = con.cursor()
             cur.execute(command)
             records = cur.fetchall()
 
@@ -239,7 +240,7 @@ def consume_message():
                 
                 # Add an entry into logs in the Zookeeper
     
-                log_entry = [fetch_command,update_command]
+                log_entry = [update_command]
                 log_entry_str = delimiter.join(log_entry)
                 zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
 
@@ -285,7 +286,7 @@ def consume_message():
 # def watch_node(data, stat):
 #     print("Version: %s, data: %s" % (stat.version, data.decode("utf-8")))
 
-
+#TESTED
 @app.route("/consumer/create", methods=['POST'])
 def create_consumer():
     # Get the message from the request body
@@ -305,13 +306,14 @@ def create_consumer():
     
     try:
         with con:
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
-            last_log_index = cur.fetchone()[0]
-            
             # Start a transaction
             con.execute("BEGIN")
-            command = "INSERT INTO consumer VALUES('" + str(id) + "');"
             cur = con.cursor()
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
+            last_log_index = cur.fetchone()[0]
+            
+            command = "INSERT INTO consumer VALUES('" + str(id) + "');"
+            
             cur.execute(command)
             
             #update the last_log_index
@@ -329,7 +331,7 @@ def create_consumer():
         print("closing db connection")
         close_db_connection(con)
 
-
+#TESTED
 @app.route("/consumer/delete", methods=['POST'])
 def delete_consumer():
     # Get the message from the request body
@@ -355,7 +357,7 @@ def delete_consumer():
         with con:
             # Start a transaction
             con.execute("BEGIN")
-            command = "DELETE FROM consumer WHERE id = " + str(id) + ";"
+            command = "DELETE FROM consumer WHERE id = '" + str(id) + "';"
             cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]
@@ -372,7 +374,7 @@ def delete_consumer():
         print("closing db connection")
         close_db_connection(con)
 
-
+#TESTED
 @app.route("/producer/create", methods=['POST'])
 def create_producer():
     # Get the message from the request body
@@ -413,7 +415,7 @@ def create_producer():
         print("closing db connection")
         close_db_connection(con)
 
-
+#TESTED
 @app.route("/producer/delete", methods=['POST'])
 def delete_producer():
     # Get the message from the request body
@@ -435,7 +437,7 @@ def delete_producer():
         with con:
             # Start a transaction
             con.execute("BEGIN")
-            command = "DELETE FROM producer WHERE id = " + str(id) + ";"
+            command = "DELETE FROM producer WHERE id = '" + str(id) + "';"
             cur = con.cursor()
             cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
             last_log_index = cur.fetchone()[0]  
@@ -452,7 +454,7 @@ def delete_producer():
         print("closing db connection")
         close_db_connection(con)
 
-
+#TESTED
 @app.route("/topic/exists", methods=['POST'])
 def exists_topic():
     # Get the message from the request body
@@ -464,9 +466,9 @@ def exists_topic():
     
     # Add an entry into logs in the Zookeeper
     
-    log_entry = [command]
-    log_entry_str = delimiter.join(log_entry)
-    zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
+    # log_entry = [command]
+    # log_entry_str = delimiter.join(log_entry)
+    # zk.create('/logs/log_', value= log_entry_str.encode(), sequence = True)
 
     # Commit entry into the database
 
@@ -478,9 +480,9 @@ def exists_topic():
             con.execute("BEGIN")
             
             cur = con.cursor()
-            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
-            last_log_index = cur.fetchone()[0]  
-            cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
+            # cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
+            # last_log_index = cur.fetchone()[0]  
+            # cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
             print(command)
             cur.execute(command)
@@ -502,6 +504,7 @@ def exists_topic():
         print("closing db connection")
         close_db_connection(con)
 
+#TESTED
 @app.route("/topic/create", methods=['POST'])
 def create_topic():
     # Get the message from the request body
@@ -545,7 +548,7 @@ def create_topic():
         print("closing db connection")
         close_db_connection(con)
 
-
+#TESTED
 @app.route("/topic/delete", methods=['POST'])
 def delete_topic():
     # Get the message from the request body
@@ -580,6 +583,7 @@ def delete_topic():
             cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
             # Commit the transaction
             con.execute("COMMIT")
+        return jsonify({'message': 'topic deleted successfully'})
     except:
         # Rollback the transaction if there was an error
         con.execute("ROLLBACK")
@@ -603,20 +607,21 @@ def execute_from_log(event):
         return 
     
     con = get_db_connection()
-    cur = con.cursor()
-    
-    cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
-    last_log_index = cur.fetchone()[0]
-    # con.commit()
-    
-    print("last : "+str(last_log_index))
+    try:
+        with con:
+            cur = con.cursor()
+            
+            cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(node_id) + "';")
+            last_log_index = cur.fetchone()[0]
+            # con.commit()
+            
+            print("last : "+str(last_log_index))
 
-    for log in event[last_log_index:]:
-        curr_log = zk.get('/logs/'+log);
-        curr_log = curr_log[0].decode();
-        commands = curr_log.split(delimiter)
-        try:
-            with con:
+            for log in event[last_log_index:]:
+                curr_log = zk.get('/logs/'+log);
+                curr_log = curr_log[0].decode();
+                commands = curr_log.split(delimiter)
+                
                 # Start a transaction
                 con.execute("BEGIN")
                 for command in commands:
@@ -625,14 +630,15 @@ def execute_from_log(event):
                     cur.execute(command)
                 cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
                 con.execute("COMMIT")
-        except:
-            # Rollback the transaction if there was an error
-            con.execute("ROLLBACK")
-            return jsonify({'message': 'topic deletion unsuccessful!!'}), 501
-        finally:
-            last_log_index = last_log_index+1
-            print("closing db connection")
-            close_db_connection(con)
+                last_log_index = last_log_index+1
+    except:
+        # Rollback the transaction if there was an error
+        con.execute("ROLLBACK")
+        return jsonify({'message': 'topic deletion unsuccessful!!'}), 501
+    finally:
+        #last_log_index = last_log_index+1
+        print("closing db connection")
+        close_db_connection(con)
     lock.release()
     
     # cur.execute("SELECT last_log_index FROM config_table WHERE id = '" + str(id) + "';")
@@ -643,7 +649,7 @@ def execute_from_log(event):
 if __name__ == '__main__':
     #start_election()
     db_init()
-    # zk.delete("/logs", recursive=True)
+    #zk.delete("/logs", recursive=True)
     # db_clear()
     log_init()
     watcher = ChildrenWatch(client=zk, path="/logs", func=execute_from_log)
