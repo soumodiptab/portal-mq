@@ -61,7 +61,7 @@ class PortalClient:
         if method == 'POST':
             try :
                 data["id"]=str(self.id)
-                response = requests.post(f"http://{self.leader['host']}:{self.leader['port']}{path}",json=data)
+                response = requests.post(f"http://{self.leader['host']}:{self.leader['port']}{path}",json=data,timeout=timeout)
                 if not response.status_code == 200:
                     return None,response.status_code
                 return response.json(),response.status_code
@@ -69,7 +69,7 @@ class PortalClient:
                 return self.request(method,path,data,timeout,recur+1)
         elif method == 'GET':
             try :
-                response = requests.get(f"http://{self.leader['host']}:{self.leader['port']}{path}")
+                response = requests.get(f"http://{self.leader['host']}:{self.leader['port']}{path}",timeout=timeout)
                 if not response.status_code == 200:
                     return None,response.status_code
                 return response.json(),response.status_code

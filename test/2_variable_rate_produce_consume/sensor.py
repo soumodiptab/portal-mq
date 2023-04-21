@@ -69,12 +69,12 @@ def handler(signum, frame):
 signal.signal(signal.SIGINT, handler)
 
 if __name__ == '__main__':
-    # sensor_name = sys.argv[1]
-    # sensor_id = sys.argv[2]
-    # sensor_timeout = sys.argv[3]
-    sensor_name = 'temp'
-    sensor_id = '1'
-    sensor_timeout = 5
+    sensor_name = sys.argv[1]
+    sensor_id = sys.argv[2]
+    sensor_timeout = float(sys.argv[3])
+    # sensor_name = 'temp'
+    # sensor_id = '1'
+    # sensor_timeout = 5
     if sensor_name == 'temp':
         sensor = TEMP('temp',sensor_id,sensor_timeout)
         sensor.start()

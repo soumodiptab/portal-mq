@@ -355,7 +355,7 @@ def consume_message():
                 #update the last_log_index
 
                 cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
-                cur.commit()
+                con.commit()
                 if offset+1 == size:
                     topic_lock(name)
                 printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
@@ -816,7 +816,6 @@ def execute_from_log(event):
         # con.rollback()
         con.rollback()
         printlog("[ROLLBACKED]","RED")
-        return jsonify({'message': 'topic deletion unsuccessful!!'}), 501
     finally:
         #last_log_index = last_log_index+1
         # printlog("CLOSING DB")
