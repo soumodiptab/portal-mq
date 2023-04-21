@@ -275,7 +275,8 @@ def read_message():
                 return jsonify({'message': ''}), 204
     except:
         # Rollback the transaction if there was an error
-        con.execute("ROLLBACK")
+        con.rollback()
+        printlog("[ROLLBACKED]","RED")
         return jsonify({'message': 'error consuming message'}), 501
     finally:
         print("closing db connection")
@@ -318,18 +319,22 @@ def consume_message():
 
             # Reading id, size from topic table
             command = "SELECT * FROM topic WHERE name = '" + str(name) + "';"
+            # print(command)
             cur.execute(command)
             records = cur.fetchall()
-            
+
             id = records[0][0]
             offset = records[0][2]
             size = records[0][3]
 
-            printlog("[TOPIC OFFSET] :"+ str(offset), "YELLOW")
+            printlog("[TOPIC OFFSET] :"+str(offset), "YELLOW")
 
             if(seq_no < size and seq_no == offset+1):
                 fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
                 update_command = "UPDATE topic SET offset = " + str(offset+1) + " WHERE name = '" + str(name) + "';"
+
+                
+                #print(update_command)
                 
                 # Add an entry into logs in the Zookeeper
     
