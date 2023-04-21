@@ -273,7 +273,7 @@ def consume_message():
             offset = records[0][2]
             size = records[0][3]
 
-            printlog("[TOPIC OFFSET] :"+offset, "YELLOW")
+            printlog("[TOPIC OFFSET] :"+ str(offset), "YELLOW")
 
             if(offset < size):
                 fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
@@ -298,8 +298,9 @@ def consume_message():
                 #update the last_log_index
 
                 cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
+                cur.commit()
                 printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
-                return jsonify({'message' : message})
+                return jsonify({'message' : message})   
             else:
                 printlog("OFFSET EXCEEDS QUEUE SIZE","RED")
                 return jsonify({'message': ''}), 204
