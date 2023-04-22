@@ -18,8 +18,8 @@ colorama.init()
 app = Flask(__name__)
 #node_id = str(uuid.uuid4())
 HOST = '127.0.0.1'
-PORT = 5000
-# PORT = sys.argv[1]
+# PORT = 5000
+PORT = sys.argv[1]
 node_id = HOST + str(PORT)
 zkhost='localhost:2181'
 zk = KazooClient(hosts=zkhost)
@@ -190,6 +190,7 @@ def publish_message():
     # # Create a new znode with the message as the data
     # zk.create('/message_queue/message_', value=message.encode(), sequence=True)
     # return 'Message published successfully.'
+    consumeLock.acquire()
     name = request.json.get('name')
     message = request.json.get('message')
     # publishLock.acquire()
@@ -257,10 +258,12 @@ def publish_message():
     finally:
         # printlog("CLOSING DB")
         close_db_connection(con)
+        consumeLock.release()
         # publishLock.release()
 
 @app.route('/read', methods=['POST'])
 def read_message():
+    consumeLock.acquire()
     name = request.json.get('name')
     consumer_id = request.json.get('id')
     con = get_db_connection()
@@ -297,7 +300,7 @@ def read_message():
     finally:
         print("closing db connection")
         close_db_connection(con)
-        # consumeLock.release()
+        consumeLock.release()
 
 #TESTED
 @app.route('/consume', methods=['POST'])
@@ -318,6 +321,7 @@ def consume_message():
     #     return message
     # else:
     #     return 'No messages in the queue.'
+    consumeLock.acquire()
     name = request.json.get('name')
     seq_no = request.json.get('offset')
     con = get_db_connection()
@@ -385,6 +389,7 @@ def consume_message():
     finally:
         # printlog("CLOSING DB")
         close_db_connection(con)
+        consumeLock.release()
 
 
 # Watch for changes in the leadership

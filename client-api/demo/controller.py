@@ -49,7 +49,7 @@ def handler(signum, frame):
 signal.signal(signal.SIGINT, handler)
 
 if __name__ == '__main__':
-    # controller_topic = sys.argv[1]
-    controller_topic = 'temp_1'
+    controller_topic = sys.argv[1]
+    # controller_topic = 'temp_1'
     controller = CONTROLLER(controller_topic)
     controller.start()
