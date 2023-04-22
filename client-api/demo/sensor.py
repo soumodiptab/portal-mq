@@ -23,7 +23,7 @@ class SENSOR(threading.Thread):
         self.sleep_time = sleep_time
         self.set_producer()
         self._stopevent = threading.Event()
-
+ 
     def set_producer(self):
         self.client = PortalClient(config)
         self.producer = PortalProducer(self.client)

@@ -81,5 +81,5 @@ class PortalConsumer:
             if status == 200:
                 return resp_mesg['message']
     
-    def  __del(self):
+    def  __del__(self):
         self.__unregister()
