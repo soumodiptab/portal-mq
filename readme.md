@@ -41,8 +41,10 @@ python3 controller.py temp_2
 - `Producer -> Broker:` Producer keeps on retrying to send the message incase of network failure until it recieves an acknowledgement from broker.
 - `Broker -> Consumer:` Broker first sends the message with its sequence number, only when consumer recieves the message it tells the broker to consume and only then the message is consumed and offset is incremented.
 
-### 
+### Consumers Subscribe
+- Consumers automatically sleep when there is no message in the queue.
+- Whenever a new message arrives all the consumers are notified which are in sleep mode and they compete to consume a message from the queue.
 
-### Replication Test
+### Broker Replication
 - Shutdown leader and check which new leader gets elected and check if all operations have been executed.
 - If running producers and consumers automatically aligns themselves to the new leader.
