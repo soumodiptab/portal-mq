@@ -55,7 +55,7 @@ class SENSOR(threading.Thread):
 
 class TEMP(SENSOR):
     def __init__(self, name, id,sleep_time=5):
-        super().__init__(self, name, id,sleep_time)
+        super().__init__(name, id,sleep_time)
         self.count =0
 
     def get_data(self):
@@ -79,7 +79,7 @@ if __name__ == '__main__':
     # sensor_timeout = float(sys.argv[3])
     sensor_name = 'temp'
     sensor_id = '1'
-    sensor_timeout = 1
+    sensor_timeout = 5
     if sensor_name == 'temp':
         sensor = TEMP('temp',sensor_id,sensor_timeout)
         sensor.start()

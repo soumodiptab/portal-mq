@@ -75,14 +75,11 @@ class PortalConsumer:
             resp_mesg = self.read_message(self.topic)
             if resp_mesg is None:
                 self._event.wait()
-                if self._event.is_set():
-                    break
                 continue
             _,status=self.client.request('POST','/consume',data={"name":self.topic,"offset":resp_mesg['offset']})
             # self.topic_unlock(topic)
             if status == 200:
                 return resp_mesg['message']
-        return None
     
     def  __del(self):
         self.__unregister()

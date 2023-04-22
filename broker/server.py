@@ -18,7 +18,7 @@ colorama.init()
 app = Flask(__name__)
 #node_id = str(uuid.uuid4())
 HOST = '127.0.0.1'
-PORT = 5000
+PORT = 5001
 # PORT = sys.argv[1]
 node_id = HOST + str(PORT)
 zkhost='localhost:2181'
