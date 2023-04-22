@@ -3,9 +3,10 @@ from kazoo.client import KazooClient
 import requests
 import json
 import logging
+import time
 TIMEOUT_CONNECT = 5
 TIMEOUT_REQUEST = 3
-MAX_RETRY = 10
+MAX_RETRY = 20
 # LOG_FORMAT = '%(process)d-%(levelname)s-%(asctime)s--%(message)s'
 # logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
 # log = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ class PortalClient:
                     return None,response.status_code
                 return response.json(),response.status_code
             except Exception:
+                time.sleep(1)
                 return self.request(method,path,data,timeout,recur+1)
         elif method == 'GET':
             try :
@@ -74,6 +76,7 @@ class PortalClient:
                     return None,response.status_code
                 return response.json(),response.status_code
             except Exception:
+                time.sleep(1)
                 return self.request(method,path,data,timeout,recur+1)
         else:
             raise Exception("Invalid method")

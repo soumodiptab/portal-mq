@@ -18,8 +18,8 @@ colorama.init()
 app = Flask(__name__)
 #node_id = str(uuid.uuid4())
 HOST = '127.0.0.1'
-PORT = 5001
-# PORT = sys.argv[1]
+# PORT = 5001
+PORT = sys.argv[1]
 node_id = HOST + str(PORT)
 zkhost='localhost:2181'
 zk = KazooClient(hosts=zkhost)
@@ -818,15 +818,17 @@ def execute_from_log(event):
                     cur.execute(command)
                     printcommand(command)
                 cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
+                printcommand("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
                 # con.execute("COMMIT")
                 con.commit()
                 printlog("[COMMITTED]","GREEN")
                 last_log_index = last_log_index+1
                 printlog("[LOG INDEX] : "+str(last_log_index),"YELLOW")
-    except:
+    except Exception as e:
         # Rollback the transaction if there was an error
         # con.execute("ROLLBACK")
         # con.rollback()
+        print(e)
         con.rollback()
         printlog("[ROLLBACKED]","RED")
     finally:
