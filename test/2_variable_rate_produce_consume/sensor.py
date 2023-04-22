@@ -54,8 +54,13 @@ class SENSOR(threading.Thread):
 
 
 class TEMP(SENSOR):
+    def __init__(self, name, id,sleep_time=5):
+        super().__init__(self, name, id,sleep_time)
+        self.count =0
+
     def get_data(self):
-        data = random.randint(0, 100)
+        data = self.count
+        self.count+=1
         print('==============================================================')
         print('TEMP: ', data)
         print('==============================================================')
@@ -69,12 +74,12 @@ def handler(signum, frame):
 signal.signal(signal.SIGINT, handler)
 
 if __name__ == '__main__':
-    sensor_name = sys.argv[1]
-    sensor_id = sys.argv[2]
-    sensor_timeout = float(sys.argv[3])
-    # sensor_name = 'temp'
-    # sensor_id = '1'
-    # sensor_timeout = 5
+    # sensor_name = sys.argv[1]
+    # sensor_id = sys.argv[2]
+    # sensor_timeout = float(sys.argv[3])
+    sensor_name = 'temp'
+    sensor_id = '1'
+    sensor_timeout = 1
     if sensor_name == 'temp':
         sensor = TEMP('temp',sensor_id,sensor_timeout)
         sensor.start()

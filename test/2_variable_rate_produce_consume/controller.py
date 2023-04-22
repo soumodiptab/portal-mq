@@ -24,24 +24,25 @@ class CONTROLLER(threading.Thread):
 
     def set_consumer(self):
         self.client = PortalClient(config)
-        self.consumer = PortalConsumer(self.client)
+        self.consumer = PortalConsumer(self.client,self.topic)
 
     def do_action(self, message):
         print(message)
 
     def run(self):
         while True:
-            message = self.consumer.get_message(self.topic)
-            self.do_action(message)
+            message = self.consumer.get_message()
             if self._stopevent.isSet():
                 break
+            self.do_action(message)
 
     def stop(self):
         self._stopevent.set()
+        self.consumer.stop()
 
 
 def handler(signum, frame):
-    print('Shutting down sensor...')
+    print('Shutting down controller...')
     controller.stop()
 
 

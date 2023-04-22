@@ -159,14 +159,29 @@ def clear():
     db_init()
     return 'Cleared DB'
 
-def topic_lock(topic):
-    clock =zk.Lock('locks/topics/{}'.format(topic),node_id)
-    if len(clock.contenders()) == 0:
-        clock.acquire()
+def topic_lock(topic,consumer_id):
+    data,stat = zk.get('locks/topics/{}'.format(topic))
+    lock_state = int(data.decode())
+    if lock_state == 0:
+        zk.set('locks/topics/{}'.format(topic,consumer_id),b'1')
 
-def topic_unlock(topic):
-    clock =zk.Lock('locks/topics/{}'.format(topic),node_id)
-    clock.release()
+# def topic_unlock(topic,consumer_id):
+#     clock =zk.Lock('locks/topics/{}/{}'.format(topic,consumer_id),node_id)
+#     clock.release()
+
+def topic_unlock_all_consumers(topic):
+    # consumers = zk.get_children('locks/topics/{}'.format(topic))
+    # for consumer in consumers:
+    data,stat = zk.get('locks/topics/{}'.format(topic))
+    lock_state = int(data.decode())
+    if lock_state == 1:
+        zk.set('locks/topics/{}'.format(topic),b'0')
+
+# def topic_lock_all_consumers(topic):
+#     consumers = zk.get_children('locks/topics/{}'.format(topic))
+#     for consumer in consumers:
+#         topic_lock(topic,consumer)
+
 #TESTED
 @app.route('/publish', methods=['POST'])
 def publish_message():
@@ -229,7 +244,7 @@ def publish_message():
             # Commit the transaction
             # con.execute("COMMIT")
             con.commit()
-            topic_unlock(name)
+            topic_unlock_all_consumers(name)
             printlog("[COMMITTED]", "GREEN")
             printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
         return jsonify({'message': 'published in topic successfully'})
@@ -247,12 +262,12 @@ def publish_message():
 @app.route('/read', methods=['POST'])
 def read_message():
     name = request.json.get('name')
+    consumer_id = request.json.get('id')
     con = get_db_connection()
 
     try:
         with con:
             cur = con.cursor()
-
             # Start a transaction
             con.execute("BEGIN")
 
@@ -272,6 +287,7 @@ def read_message():
                 message = records[0][2]
                 return jsonify({'message' : message, 'offset' : offset+1})
             else:
+                topic_lock(name,consumer_id)
                 return jsonify({'message': ''}), 204
     except:
         # Rollback the transaction if there was an error
@@ -329,7 +345,7 @@ def consume_message():
 
             printlog("[TOPIC OFFSET] :"+str(offset), "YELLOW")
 
-            if(seq_no < size and seq_no == offset+1):
+            if(seq_no <= size and seq_no == offset+1):
                 fetch_command = "SELECT * FROM message_queue WHERE id = " + str(id) + " AND seq_no = " + str(offset+1) + ";"
                 update_command = "UPDATE topic SET offset = " + str(offset+1) + " WHERE name = '" + str(name) + "';"
 
@@ -353,11 +369,8 @@ def consume_message():
                 
                 cur.execute(update_command)
                 #update the last_log_index
-
                 cur.execute("UPDATE config_table SET last_log_index = " + str(last_log_index+1) + " WHERE id = '" + str(node_id) + "';")
                 con.commit()
-                if offset+1 == size:
-                    topic_lock(name)
                 printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
                 return jsonify({'message' : ''})   
             else:
@@ -695,7 +708,7 @@ def create_topic():
             con.commit()
             printlog("[COMMITTED]", "GREEN")
             printlog("[LOG INDEX] : "+str(last_log_index+1),"YELLOW")
-            zk.ensure_path('locks/topics/{}'.format(name))
+            zk.create('locks/topics/{}'.format(name),b'0')
         return jsonify({'message': 'topic created successfully'})
     except:
         # Rollback the transaction if there was an error

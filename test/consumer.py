@@ -1,19 +1,37 @@
+import threading
 from portal_client import PortalClient
 class PortalConsumer:
-    def __init__(self,client : PortalClient):
+    def __init__(self,client : PortalClient,topic):
         
         self.client = client
+        self.topic =topic
         self.__register()
+        if not self.is_exists_topic(self.topic):
+            self.create_topic(self.topic)
+        self._event = threading.Event()
+        
+        @self.client.zk.DataWatch('locks/topics/{}'.format(topic))
+        def watch_lock_status(data, stat):
+            # This function will be called whenever the data of the "/leader" node changes
+            lock_state = data.decode()
+            if lock_state == '0':
+                self._event.set()
+            else:
+                self._event.clear()
+            # print('Lock State :'+lock_state)
 
     def __register(self):
         resp,_=self.client.request('POST','/consumer/create',data={})
         self.client.zk.create('/consumers/{}'.format(self.client.id),ephemeral=True)
+        # self.client.zk.create('/locks/topics/{}/{}'.format(self.topic,self.client.id), b'0',ephemeral=True)
         # print(resp['message'])
 
     def __unregister(self):
         resp,_=self.client.request('POST','/consumer/delete',data={})
         # print(resp['message'])
     
+    def stop(self):
+        self._event.set()
     # def __del__(self):
     #     self.__unregister()
 
@@ -31,15 +49,6 @@ class PortalConsumer:
         resp,_=self.client.request('POST','/topic/create',data)
         # print(resp['message'])
 
-    def topic_lock(self,topic):
-        barrier = self.client.zk.Barrier
-        clock=self.client.zk.Lock('locks/topics/{}'.format(topic),self.client.id)
-        clock.acquire()
-
-    def topic_unlock(self,topic):
-        clock=self.client.zk.Lock('locks/topics/{}'.format(topic),self.client.id)
-        clock.release()
-
     def register_topic(self,topic):
         self.client.zk.create('topics/{}/'.format(topic),ephemeral=True)
 
@@ -53,7 +62,7 @@ class PortalConsumer:
         return None
     
 
-    def get_message(self,topic):
+    def get_message(self):
         """Blocking call that returns a message from the given topic.
 
         Args:
@@ -62,19 +71,18 @@ class PortalConsumer:
         Returns:
             str: Message
         """
-        if not self.is_exists_topic(topic):
-            self.create_topic(topic)
         while True:
-            resp_mesg = self.read_message(topic)
+            resp_mesg = self.read_message(self.topic)
             if resp_mesg is None:
-                self.topic_lock(topic)
+                self._event.wait()
+                if self._event.is_set():
+                    break
                 continue
-            _,status=self.client.request('POST','/consume',data={"name":topic,"offset":resp_mesg['offset']})
-            self.topic_unlock(topic)
+            _,status=self.client.request('POST','/consume',data={"name":self.topic,"offset":resp_mesg['offset']})
+            # self.topic_unlock(topic)
             if status == 200:
                 return resp_mesg['message']
+        return None
     
-    # def get_topics(self):
-    #     resp,_=self.client.request('GET','/topics')
-    #     return resp.topics
-    
+    def  __del(self):
+        self.__unregister()

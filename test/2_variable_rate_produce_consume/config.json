@@ -2,7 +2,7 @@
     "brokers":[
         {
             "host":"localhost",
-            "port":9092
+            "port":5000
         }
     ]
 }
