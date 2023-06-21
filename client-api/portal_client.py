@@ -3,9 +3,10 @@ from kazoo.client import KazooClient
 import requests
 import json
 import logging
+import time
 TIMEOUT_CONNECT = 5
 TIMEOUT_REQUEST = 3
-MAX_RETRY = 5
+MAX_RETRY = 20
 # LOG_FORMAT = '%(process)d-%(levelname)s-%(asctime)s--%(message)s'
 # logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
 # log = logging.getLogger(__name__)
@@ -55,25 +56,27 @@ class PortalClient:
     #             raise Exception(f"Unable to connect to broker {portal['host']}:{portal['port']}")
     #     print("All brokers are up")
         
-    def request(self,method,path,data,recur=0):
+    def request(self,method,path,data,timeout=TIMEOUT_REQUEST,recur=0):
         if recur >= MAX_RETRY:
             raise Exception(f"Unable to connect to leader after {MAX_RETRY} retries")
         if method == 'POST':
             try :
                 data["id"]=str(self.id)
-                response = requests.post(f"http://{self.leader['host']}:{self.leader['port']}{path}",json=data,timeout=TIMEOUT_REQUEST)
+                response = requests.post(f"http://{self.leader['host']}:{self.leader['port']}{path}",json=data)
                 if not response.status_code == 200:
                     return None,response.status_code
                 return response.json(),response.status_code
             except Exception:
-                return self.request(method,path,data,recur+1)
+                time.sleep(1)
+                return self.request(method,path,data,timeout,recur+1)
         elif method == 'GET':
             try :
-                response = requests.get(f"http://{self.leader['host']}:{self.leader['port']}{path}",timeout=TIMEOUT_REQUEST)
+                response = requests.get(f"http://{self.leader['host']}:{self.leader['port']}{path}")
                 if not response.status_code == 200:
                     return None,response.status_code
                 return response.json(),response.status_code
             except Exception:
-                return self.request(method,path,data,recur+1)
+                time.sleep(1)
+                return self.request(method,path,data,timeout,recur+1)
         else:
             raise Exception("Invalid method")
